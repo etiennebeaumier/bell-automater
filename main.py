@@ -25,6 +25,8 @@ from getpass import getpass
 from parsers.td import parse_td_pdf
 from parsers.scotiabank import parse_scotiabank_pdf
 from parsers.cibc import parse_cibc_pdf
+from parsers.nbcm import parse_nbcm_pdf
+from parsers.bmo import parse_bmo_pdf
 
 MASTER_FILE = os.path.join("data", "Master File.xlsx")
 REQUIRED_SHEETS = ("Pricing", "Summary Charts")
@@ -33,6 +35,8 @@ BANK_PARSERS = {
     "td": parse_td_pdf,
     "scotiabank": parse_scotiabank_pdf,
     "cibc": parse_cibc_pdf,
+    "nbcm": parse_nbcm_pdf,
+    "bmo": parse_bmo_pdf,
 }
 
 
@@ -201,6 +205,10 @@ def detect_bank(pdf_path: str) -> str:
         return "scotiabank"
     if "cibc" in filename:
         return "cibc"
+    if "nbcm" in filename or "national bank" in filename:
+        return "nbcm"
+    if "bmo" in filename:
+        return "bmo"
     if "td" in filename:
         return "td"
 
@@ -216,6 +224,10 @@ def detect_bank(pdf_path: str) -> str:
         return "scotiabank"
     if "cibc capital markets" in text or "cibc" in text:
         return "cibc"
+    if "national bank" in text or "nbcm" in text:
+        return "nbcm"
+    if "bmo nesbitt burns" in text or "bmo capital markets" in text:
+        return "bmo"
     if "td securities" in text:
         return "td"
 
