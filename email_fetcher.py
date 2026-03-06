@@ -1,20 +1,83 @@
-"""Fetch BCECN PDF attachments from Outlook (Exchange/O365)."""
+"""Fetch BCECN PDF attachments from Outlook (Exchange/O365) via OAuth2."""
 
 import os
 import tempfile
 from datetime import datetime, timedelta
 from exchangelib import (
     Account,
-    Credentials,
     Configuration,
     DELEGATE,
+    Identity,
     Q,
 )
+from exchangelib.protocol import BaseProtocol
+from exchangelib.credentials import OAuth2AuthorizationCodeCredentials
+import msal
 
 
-def connect_outlook(email: str, password: str, server: str = "outlook.office365.com") -> Account:
-    """Connect to Exchange/O365 mailbox."""
-    credentials = Credentials(email, password)
+# Microsoft's well-known client ID for "Microsoft Office" public client.
+# Works for device-code flow against any O365 tenant without app registration.
+# Microsoft Outlook Mobile - commonly pre-approved in enterprise tenants
+MS_OFFICE_CLIENT_ID = "27922004-5251-4030-b22d-91ecd9a37ea4"
+EWS_SCOPE = ["https://outlook.office365.com/EWS.AccessAsUser.All"]
+
+
+def _acquire_token_device_code(email: str, client_id: str = MS_OFFICE_CLIENT_ID, status_callback=None):
+    """Acquire an OAuth2 access token using the device code flow.
+
+    Args:
+        email: User's email address (used to derive tenant domain).
+        client_id: Azure AD application (client) ID.
+        status_callback: Optional callable(message: str) for status updates
+                         (e.g. "Go to https://... and enter code ABC123").
+
+    Returns:
+        dict with 'access_token' on success.
+
+    Raises:
+        RuntimeError on authentication failure.
+    """
+    tenant = email.split("@")[1]
+    authority = f"https://login.microsoftonline.com/{tenant}"
+    app = msal.PublicClientApplication(client_id, authority=authority)
+
+    flow = app.initiate_device_flow(scopes=EWS_SCOPE)
+    if "user_code" not in flow:
+        raise RuntimeError(f"Could not initiate device flow: {flow.get('error_description', 'unknown error')}")
+
+    message = flow["message"]  # e.g. "To sign in, use a web browser to open ..."
+    if status_callback:
+        status_callback(message)
+    else:
+        print(message)
+
+    result = app.acquire_token_by_device_flow(flow)
+
+    if "access_token" not in result:
+        error = result.get("error_description", result.get("error", "unknown error"))
+        raise RuntimeError(f"OAuth2 authentication failed: {error}")
+
+    return result
+
+
+def connect_outlook(email: str, server: str = "outlook.office365.com", status_callback=None) -> Account:
+    """Connect to Exchange/O365 mailbox using OAuth2 device code flow.
+
+    Args:
+        email: User's corporate email address.
+        server: EWS server hostname.
+        status_callback: Optional callable(message: str) for auth status updates.
+
+    Returns:
+        Connected exchangelib Account.
+    """
+    token_result = _acquire_token_device_code(email=email, status_callback=status_callback)
+    access_token = token_result["access_token"]
+
+    credentials = OAuth2AuthorizationCodeCredentials(
+        access_token={"access_token": access_token, "token_type": "Bearer"},
+    )
+
     config = Configuration(server=server, credentials=credentials)
     account = Account(
         primary_smtp_address=email,

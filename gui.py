@@ -466,7 +466,6 @@ with tab_outlook:
             email = st.text_input("Email", value=os.environ.get("OUTLOOK_EMAIL", ""))
             server = st.text_input("Server", value=os.environ.get("OUTLOOK_SERVER", "outlook.office365.com"))
         with right_col:
-            password = st.text_input("Password", type="password", value=os.environ.get("OUTLOOK_PASSWORD", ""))
             days = st.number_input(
                 "Days back",
                 min_value=1,
@@ -483,17 +482,24 @@ with tab_outlook:
         )
 
     if fetch_clicked:
-        if not email or not password:
+        if not email:
             st.markdown(
-                '<div class="result-card result-err">Email and password are required.</div>',
+                '<div class="result-card result-err">Email is required.</div>',
                 unsafe_allow_html=True,
             )
         else:
             try:
                 from email_fetcher import connect_outlook, fetch_bcecn_pdfs
 
-                with st.spinner("Connecting to Outlook..."):
-                    account = connect_outlook(email, password, server=server)
+                auth_placeholder = st.empty()
+
+                def _auth_status(msg):
+                    auth_placeholder.info(msg)
+
+                with st.spinner("Authenticating via Microsoft..."):
+                    account = connect_outlook(email, server=server, status_callback=_auth_status)
+
+                auth_placeholder.empty()
 
                 with st.spinner("Searching for BCECN emails..."):
                     pdfs = fetch_bcecn_pdfs(
