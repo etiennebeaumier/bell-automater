@@ -6,7 +6,7 @@ Usage:
     python main.py --pdf "BCECN 03.02.26.pdf"
 
     # Fetch from Outlook and process:
-    python main.py --fetch --email etienne.beaumier@bell.ca --password YOUR_PASSWORD
+    python main.py --fetch --email etienne.beaumier@bell.ca
 
     # Or configure .env and just run:
     python main.py --fetch
@@ -20,8 +20,6 @@ import importlib.util
 import os
 import sys
 from datetime import datetime
-from getpass import getpass
-
 from parsers.td import parse_td_pdf
 from parsers.scotiabank import parse_scotiabank_pdf
 from parsers.cibc import parse_cibc_pdf
@@ -87,7 +85,6 @@ def run_preflight(
     require_workbook: bool = True,
     check_fetch: bool = False,
     email: str | None = None,
-    password: str | None = None,
     days: int | None = None,
     server: str | None = None,
     sender: str | None = None,
@@ -163,11 +160,6 @@ def run_preflight(
             report("PASS", f"Fetch config: email set to {email}.")
         else:
             report("FAIL", "Fetch config: missing Outlook email. Use --email or OUTLOOK_EMAIL.")
-
-        if password:
-            report("PASS", "Fetch config: password provided.")
-        else:
-            report("FAIL", "Fetch config: missing Outlook password. Use --password or OUTLOOK_PASSWORD.")
 
         if server:
             report("PASS", f"Fetch config: server set to {server}.")
@@ -369,7 +361,6 @@ def interactive_mode(
     default_days: int,
     default_server: str,
     default_sender: str | None,
-    default_password: str | None,
 ) -> None:
     """Run interactive menu mode for no-argument usage."""
     print("Interactive mode")
@@ -437,16 +428,11 @@ def interactive_mode(
             dry_run = prompt_yes_no("Dry run (preview only)", default=True)
             master_file = prompt_with_default("Master workbook path", default_master, required=not dry_run)
 
-            password = default_password or ""
-            if not password:
-                password = getpass("Outlook password: ").strip()
-
             if not run_preflight(
                 master_file=master_file,
                 require_workbook=not dry_run,
                 check_fetch=True,
                 email=email,
-                password=password,
                 days=days,
                 server=server,
                 sender=sender,
@@ -455,13 +441,9 @@ def interactive_mode(
                 if not prompt_yes_no("Preflight failed. Continue anyway", default=False):
                     continue
 
-            if not password:
-                print("Outlook password is required for fetch mode.")
-                continue
-
             try:
                 print(f"Connecting to Outlook as {email}...")
-                account = connect_outlook(email, password, server=server)
+                account = connect_outlook(email, server=server)
                 pdfs = fetch_bcecn_pdfs(account, sender_filter=sender or None, days_back=days)
             except Exception as exc:
                 print(f"Fetch failed: {exc}")
@@ -480,7 +462,6 @@ def interactive_mode(
             master_file = prompt_with_default("Master workbook path", default_master, required=not dry_run)
 
             email = default_email if check_fetch else None
-            password = default_password if check_fetch else None
             days = default_days if check_fetch else None
             server = default_server if check_fetch else None
             sender = default_sender if check_fetch else None
@@ -490,7 +471,6 @@ def interactive_mode(
                 require_workbook=not dry_run,
                 check_fetch=check_fetch,
                 email=email,
-                password=password,
                 days=days,
                 server=server,
                 sender=sender,
@@ -516,10 +496,6 @@ def main():
     parser.add_argument("--master", default=default_master, help="Path to Master File.xlsx")
     parser.add_argument("--fetch", action="store_true", help="Fetch PDFs from Outlook")
     parser.add_argument("--email", default=default_email, help="Outlook email")
-    parser.add_argument(
-        "--password",
-        help="Outlook password (or set OUTLOOK_PASSWORD in env/.env)",
-    )
     parser.add_argument("--days", type=int, default=default_days, help="Days back to search emails")
     parser.add_argument(
         "--server",
@@ -542,7 +518,6 @@ def main():
         subprocess.run([sys.executable, "-m", "streamlit", "run", os.path.join(os.path.dirname(__file__) or ".", "gui.py")])
         return
 
-    password = args.password or os.environ.get("OUTLOOK_PASSWORD")
     operation_requested = bool(args.fetch or args.pdf or args.dir)
 
     if args.interactive or (not operation_requested and not args.check):
@@ -552,7 +527,6 @@ def main():
             default_days=default_days,
             default_server=default_server,
             default_sender=default_sender,
-            default_password=password,
         )
         return
 
@@ -562,7 +536,6 @@ def main():
             require_workbook=not args.dry_run,
             check_fetch=args.fetch,
             email=args.email if args.fetch else None,
-            password=password if args.fetch else None,
             days=args.days if args.fetch else None,
             server=args.server if args.fetch else None,
             sender=args.sender if args.fetch else None,
@@ -579,7 +552,6 @@ def main():
             require_workbook=not args.dry_run,
             check_fetch=args.fetch,
             email=args.email if args.fetch else None,
-            password=password if args.fetch else None,
             days=args.days if args.fetch else None,
             server=args.server if args.fetch else None,
             sender=args.sender if args.fetch else None,
@@ -592,12 +564,8 @@ def main():
     if args.fetch:
         from email_fetcher import connect_outlook, fetch_bcecn_pdfs
 
-        if not password:
-            print("Error: provide --password or set OUTLOOK_PASSWORD in env/.env")
-            sys.exit(1)
-
         print(f"Connecting to Outlook as {args.email}...")
-        account = connect_outlook(args.email, password, server=args.server)
+        account = connect_outlook(args.email, server=args.server)
         pdfs = fetch_bcecn_pdfs(account, sender_filter=args.sender, days_back=args.days)
         if not pdfs:
             return
@@ -631,7 +599,6 @@ def main():
             default_days=default_days,
             default_server=default_server,
             default_sender=default_sender,
-            default_password=password,
         )
 
 
