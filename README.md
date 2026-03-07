@@ -2,11 +2,7 @@
 
 Bell Automater parses BCECN new-issue pricing PDFs, writes the extracted values into a master Excel workbook, and rebuilds the summary charts used in Bell pricing workflows.
 
-It supports three local operating modes:
-
-- CLI for one-off and batch runs
-- Interactive terminal mode for guided use
-- Streamlit GUI for browser-based use
+It runs as a standalone desktop application (no Python installation required) or from the command line.
 
 The repository also includes Power Automate, Azure Function, and Office Script assets for a cloud-hosted version of the same workflow.
 
@@ -19,53 +15,103 @@ The repository also includes Power Automate, Azure Function, and Office Script a
 - Appends one row per PDF into the `Pricing` sheet
 - Rebuilds the four curve charts in `Summary Charts`
 - Optionally fetches matching BCECN PDF attachments from Outlook / Exchange Online
+- Supports dry-run mode to preview parsed data without writing
+
+## Desktop Application
+
+The primary way to use the tool is the standalone desktop app, built with CustomTkinter and packaged with PyInstaller.
+
+### Features
+
+- **Upload PDFs** tab: select one or more local PDFs, process or preview them
+- **Fetch from Outlook** tab: pull BCECN attachments from an Outlook mailbox using OAuth2 device-code authentication
+- **Dry-run mode**: preview parsed spreads, yields, and hybrid data in the results panel without writing to the workbook
+- **Dark / Light / System theme** toggle
+- **Persistent settings**: workbook path, email, server, and preferences saved to `~/.bcecn_pricing/config.json`
+- **Auto browser open**: during Outlook authentication, the sign-in URL opens automatically and the device code is copied to clipboard
+
+### Running the App
+
+From source:
+
+```bash
+python3 app.py
+```
+
+Or use the pre-built executable (no Python needed):
+
+- **macOS**: `dist/BCECN Pricing Tool.app`
+- **Windows**: `dist/BCECN Pricing Tool.exe`
+
+### Building the Executable
+
+macOS:
+
+```bash
+./build_mac.sh
+```
+
+Windows:
+
+```bat
+build_win.bat
+```
+
+Both scripts use PyInstaller to produce a standalone single-file executable.
 
 ## Repository Layout
 
 ```text
-main.py                                CLI entry point, preflight checks, orchestration
-gui.py                                 Streamlit interface
+app.py                                 Desktop app entry point
+ui/                                    CustomTkinter GUI package
+  app_window.py                        Main window, tab layout, theme
+  tab_pdf.py                           Upload PDFs tab
+  tab_outlook.py                       Fetch from Outlook tab
+  settings_panel.py                    Sidebar: workbook path, dry-run, theme
+  results_panel.py                     Scrollable log widget
+  workers.py                           Background threading workers
+config.py                             JSON config manager
+main.py                               CLI entry point, orchestration
 email_fetcher.py                       Outlook / Exchange Online fetch logic
 excel_writer.py                        Workbook append + chart generation
 parsers/                               Bank-specific PDF parsers
-data/                                  Default workbook location
-samples/                               Example PDFs
+build_mac.sh                           macOS build script
+build_win.bat                          Windows build script
 power_automate/flow_design.md          Power Automate flow design
 power_automate/azure_function/         Azure Function parser endpoint
 power_automate/office_script/          Office Script for Excel Online
-requirements.txt                       Local Python dependencies
+requirements.txt                       Python dependencies
 ```
 
 ## Requirements
 
-### Local usage
+### Desktop app (pre-built)
+
+No requirements. Run the executable directly.
+
+### Running from source
 
 - Python 3.10+
-- A master workbook containing these sheets:
-  - `Pricing`
-  - `Summary Charts`
-- A Microsoft 365 mailbox if you want to use Outlook fetch mode
+- Dependencies from `requirements.txt`:
+  - `pdfplumber`
+  - `openpyxl`
+  - `exchangelib`
+  - `msal`
+  - `customtkinter`
+  - `pyinstaller` (only needed for building)
 
-### Python packages
+### Workbook
 
-Installed from `requirements.txt`:
+A master workbook containing these sheets:
 
-- `pdfplumber`
-- `openpyxl`
-- `exchangelib`
-- `msal`
-- `streamlit`
+- `Pricing`
+- `Summary Charts`
 
-### Cloud automation usage
+### Outlook fetch
 
-Only required for the Power Automate path:
+A Microsoft 365 mailbox. Authentication uses the OAuth2 device-code flow — no password storage required.
 
-- Azure Function App
-- Office Script in Excel Online
-- Power Automate flow
-- SharePoint or OneDrive workbook storage
-
-## Setup
+## Setup (from source)
 
 ### 1. Create and activate a virtual environment
 
@@ -75,63 +121,17 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Create `.env`
+### 2. Launch the app
 
 ```bash
-cp .env.example .env
+python3 app.py
 ```
 
-### 3. Fill in the environment values
+Settings (workbook path, email, server, etc.) are configured in the GUI and persisted automatically to `~/.bcecn_pricing/config.json`.
 
-```env
-OUTLOOK_EMAIL=your.email@bell.ca
-OUTLOOK_SERVER=outlook.office365.com
-OUTLOOK_DAYS=7
-BCECN_SENDER=
-MASTER_FILE=data/Master File.xlsx
-```
+## CLI Usage
 
-Variable reference:
-
-- `OUTLOOK_EMAIL`: mailbox used for Outlook fetch mode
-- `OUTLOOK_SERVER`: Exchange Web Services host, usually `outlook.office365.com`
-- `OUTLOOK_DAYS`: default search window for mailbox fetches
-- `BCECN_SENDER`: optional sender filter to narrow mailbox results
-- `MASTER_FILE`: default workbook path used by CLI and GUI
-
-## Workbook Expectations
-
-The Python writer and the Excel Online Office Script both assume the workbook already contains:
-
-- `Pricing`
-- `Summary Charts`
-
-Write behavior:
-
-- Column A: date
-- Column B: bank name
-- Columns C through AD: parsed CAD and USD spreads, yields, and NC values
-
-Chart behavior:
-
-- Four line charts are rebuilt on each non-dry-run write
-- Charts cover CAD spread, CAD yield, USD spread, and USD yield curves
-- Charts use only the most recent row per bank
-
-## Running the Tool
-
-### Interactive terminal mode
-
-```bash
-python3 main.py
-```
-
-If no operation flag is provided, the app opens an interactive menu with these actions:
-
-- Process one PDF
-- Process all PDFs in a directory
-- Fetch PDFs from Outlook and process them
-- Run preflight checks only
+The CLI is still available for scripting and automation.
 
 ### Process one local PDF
 
@@ -147,53 +147,29 @@ python3 main.py --dir samples
 
 ### Dry run
 
-Dry run parses the file and prints a structured preview without writing to Excel.
-
 ```bash
 python3 main.py --pdf "samples/BCECN 03.02.26.pdf" --dry-run
 ```
 
-### Preflight only
-
-Preflight checks validate dependencies, workbook accessibility, required sheet names, and fetch settings.
+### Preflight checks
 
 ```bash
 python3 main.py --check
 ```
 
-If combined with another command, preflight runs first and stops execution if validation fails.
-
-### Outlook fetch mode
+### Outlook fetch
 
 ```bash
 python3 main.py --fetch --check
 ```
 
-Fetch mode uses Microsoft device-code authentication:
-
-- You start the command locally
-- The app shows a Microsoft sign-in prompt/code
-- You complete sign-in in the browser
-- The app searches inbox emails with `BCECN` in the subject
-- Matching PDF attachments are downloaded to a temporary folder
-- Each PDF is parsed and then previewed or written like any local file
-
-This flow does not require storing an Outlook password in `.env`.
-
-### Streamlit GUI
+### Interactive terminal mode
 
 ```bash
-python3 main.py --gui
+python3 main.py
 ```
 
-The GUI supports:
-
-- Uploading one or more local PDFs
-- Dry-run preview mode
-- Live workbook writes
-- Outlook fetch using the same Microsoft device-code login flow
-
-## CLI Flags
+### CLI Flags
 
 ```text
 --pdf PDF          Path to one PDF file
@@ -207,12 +183,17 @@ The GUI supports:
 --dry-run          Parse only; do not write the workbook
 --check            Run preflight checks first
 --interactive      Force the interactive menu
---gui              Launch the Streamlit GUI
 ```
 
-## Supported Banks and Detection
+## Workbook Format
 
-Supported parser coverage:
+- Column A: date
+- Column B: bank name
+- Columns C through AD: parsed CAD and USD spreads, yields, and NC values
+- Four line charts are rebuilt on each non-dry-run write (CAD spread, CAD yield, USD spread, USD yield)
+- Charts use only the most recent row per bank
+
+## Supported Banks
 
 - TD
 - Scotiabank
@@ -220,32 +201,7 @@ Supported parser coverage:
 - NBCM
 - BMO
 
-Bank detection works in this order:
-
-- Filename-based hints
-- First-page PDF text
-
-If detection fails, include the bank name in the filename or confirm the first page contains recognizable bank identifiers.
-
-## Examples
-
-Process one PDF into the default workbook:
-
-```bash
-python3 main.py --pdf "samples/BCECN 03.02.26.pdf" --check
-```
-
-Process a directory into a specific workbook:
-
-```bash
-python3 main.py --dir samples --master "data/Master File.xlsx" --check
-```
-
-Fetch Outlook attachments from the last 5 days with a sender filter:
-
-```bash
-python3 main.py --fetch --days 5 --sender "capitalmarkets@bank.com" --check
-```
+Bank detection works by filename hints first, then first-page PDF text. If detection fails, include the bank name in the filename.
 
 ## Power Automate and Azure Assets
 
@@ -259,31 +215,20 @@ Use this path when the process should run automatically on mailbox arrival rathe
 
 ## Troubleshooting
 
-### Preflight fails on workbook validation
+### Workbook validation fails
 
-- Confirm the workbook path is correct
+- Confirm the workbook path is correct in the settings panel
 - Confirm the workbook contains `Pricing` and `Summary Charts`
-- Use `--dry-run` to test parsing without writing to the workbook
+- Use dry-run mode to test parsing without writing
 
 ### Outlook fetch returns no PDFs
 
 - Confirm the mailbox contains emails with `BCECN` in the subject
-- Increase the search range with `OUTLOOK_DAYS` or `--days`
-- Remove or loosen the `BCECN_SENDER` or `--sender` filter
+- Increase the search range with the Days Back setting or `--days`
+- Remove or loosen the sender filter
 
 ### Bank detection fails
 
 - Include the bank name in the filename
 - Confirm the first page contains extractable text
-- Test with `--dry-run` to isolate parsing from workbook writes
-
-### GUI live mode is blocked
-
-- The workbook path is invalid, unreadable, or missing required sheets
-- Fix the path in the sidebar or switch to dry-run mode
-
-## Notes
-
-- Charts are rebuilt on every non-dry-run local write.
-- Outlook-fetched files are stored temporarily during processing.
-- The Power Automate Office Script mirrors the same column mapping as the local Python writer.
+- Test with dry-run mode to isolate parsing from workbook writes
