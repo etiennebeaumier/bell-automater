@@ -510,13 +510,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Parse and preview data without writing to Excel")
     parser.add_argument("--check", action="store_true", help="Run preflight checks before processing")
     parser.add_argument("--interactive", action="store_true", help="Launch interactive mode menu")
-    parser.add_argument("--gui", action="store_true", help="Launch Streamlit web GUI")
     args = parser.parse_args()
-
-    if args.gui:
-        import subprocess
-        subprocess.run([sys.executable, "-m", "streamlit", "run", os.path.join(os.path.dirname(__file__) or ".", "gui.py")])
-        return
 
     operation_requested = bool(args.fetch or args.pdf or args.dir)
 

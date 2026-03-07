@@ -2,4 +2,5 @@ pdfplumber
 openpyxl
 exchangelib
 msal
-streamlit
+customtkinter
+pyinstaller

@@ -4,3 +4,7 @@ __pycache__/
 ~$*.xlsx
 samples/
 data/
+build/
+dist/
+*.spec
+.DS_Store
