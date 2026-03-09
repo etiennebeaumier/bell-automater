@@ -94,7 +94,7 @@ def fetch_bcecn_pdfs(
     days_back: int = 7,
     output_dir: str = None,
 ) -> list[str]:
-    """Search inbox for BCECN emails and download PDF attachments.
+    """Search inbox for BCECN / Bell Canada emails and download PDF attachments.
 
     Args:
         account: Connected Exchange account.
@@ -111,8 +111,9 @@ def fetch_bcecn_pdfs(
 
     since = datetime.now() - timedelta(days=days_back)
 
-    # Build query: subject contains BCECN, has attachments
-    query = Q(subject__contains="BCECN") & Q(datetime_received__gte=since)
+    # Build query: subject contains BCECN or Bell Canada
+    subject_filter = Q(subject__contains="BCECN") | Q(subject__contains="Bell Canada")
+    query = subject_filter & Q(datetime_received__gte=since)
     if sender_filter:
         query &= Q(sender__contains=sender_filter)
 
@@ -120,7 +121,8 @@ def fetch_bcecn_pdfs(
     for item in account.inbox.filter(query).order_by("-datetime_received"):
         for attachment in item.attachments:
             if hasattr(attachment, "name") and attachment.name and attachment.name.lower().endswith(".pdf"):
-                if "BCECN" in attachment.name.upper():
+                name_upper = attachment.name.upper()
+                if "BCECN" in name_upper or "BELL CANADA" in name_upper:
                     filepath = os.path.join(output_dir, attachment.name)
                     with open(filepath, "wb") as f:
                         f.write(attachment.content)
@@ -128,6 +130,6 @@ def fetch_bcecn_pdfs(
                     downloaded.append(filepath)
 
     if not downloaded:
-        print("No BCECN PDFs found in inbox for the given criteria.")
+        print("No BCECN / Bell Canada PDFs found in inbox for the given criteria.")
 
     return downloaded
