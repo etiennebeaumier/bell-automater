@@ -18,7 +18,7 @@ class PdfTab(ctk.CTkFrame):
         header = ctk.CTkLabel(self, text="Local PDF Intake", font=ctk.CTkFont(size=15, weight="bold"))
         header.grid(row=0, column=0, padx=16, pady=(12, 2), sticky="w")
 
-        desc = ctk.CTkLabel(self, text="Select one or more BCECN PDFs to process.", font=ctk.CTkFont(size=12), text_color="gray")
+        desc = ctk.CTkLabel(self, text="Select BCECN PDFs individually or pick a folder.", font=ctk.CTkFont(size=12), text_color="gray")
         desc.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="w")
 
         # -- File list --
@@ -30,14 +30,17 @@ class PdfTab(ctk.CTkFrame):
         btn_frame.grid(row=3, column=0, padx=16, pady=(0, 8), sticky="ew")
         btn_frame.grid_columnconfigure(1, weight=1)
 
-        self.select_btn = ctk.CTkButton(btn_frame, text="Select PDF Files", command=self._select_files)
+        self.select_btn = ctk.CTkButton(btn_frame, text="Select Files", command=self._select_files)
         self.select_btn.grid(row=0, column=0, padx=(0, 8))
 
+        self.select_folder_btn = ctk.CTkButton(btn_frame, text="Select Folder", command=self._select_folder)
+        self.select_folder_btn.grid(row=0, column=1, padx=(0, 8))
+
         self.clear_btn = ctk.CTkButton(btn_frame, text="Clear", width=70, fg_color="gray", command=self._clear_files)
-        self.clear_btn.grid(row=0, column=1, sticky="w")
+        self.clear_btn.grid(row=0, column=2, sticky="w")
 
         self.file_count_label = ctk.CTkLabel(btn_frame, text="No files selected", font=ctk.CTkFont(size=12), text_color="gray")
-        self.file_count_label.grid(row=0, column=2, padx=(16, 0))
+        self.file_count_label.grid(row=0, column=3, padx=(16, 0))
 
         # -- Progress bar --
         self.progress = ctk.CTkProgressBar(self)
@@ -61,6 +64,18 @@ class PdfTab(ctk.CTkFrame):
         if paths:
             self.selected_files = list(paths)
             self._update_file_list()
+
+    def _select_folder(self):
+        folder = filedialog.askdirectory(title="Select Folder Containing BCECN PDFs")
+        if folder:
+            pdfs = sorted(
+                os.path.join(folder, f)
+                for f in os.listdir(folder)
+                if f.lower().endswith(".pdf")
+            )
+            if pdfs:
+                self.selected_files = pdfs
+                self._update_file_list()
 
     def _clear_files(self):
         self.selected_files = []
@@ -119,4 +134,5 @@ class PdfTab(ctk.CTkFrame):
         state = "disabled" if active else "normal"
         self.process_btn.configure(state=state)
         self.select_btn.configure(state=state)
+        self.select_folder_btn.configure(state=state)
         self.clear_btn.configure(state=state)

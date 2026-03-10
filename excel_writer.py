@@ -48,9 +48,13 @@ def _major_unit(span: float, is_pct: bool) -> float:
     return candidates[-1]
 
 
+def _is_macro_enabled(path: str) -> bool:
+    return path.lower().endswith(".xlsm")
+
+
 def append_row(master_file_path: str, data: dict):
     """Append a new row to the Pricing sheet of the Master File."""
-    wb = load_workbook(master_file_path)
+    wb = load_workbook(master_file_path, keep_vba=_is_macro_enabled(master_file_path))
     ws = wb["Pricing"]
 
     next_row = ws.max_row + 1
@@ -94,7 +98,7 @@ def update_charts(master_file_path: str):
     - Y axis: Spread (bps) or Yield (%)
     - One line per bank/date combination
     """
-    wb = load_workbook(master_file_path)
+    wb = load_workbook(master_file_path, keep_vba=_is_macro_enabled(master_file_path))
     ws_data = wb["Pricing"]
     ws = wb["Summary Charts"]
 

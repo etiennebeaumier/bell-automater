@@ -69,7 +69,7 @@ class SettingsPanel(ctk.CTkFrame):
     def _browse_workbook(self):
         path = filedialog.askopenfilename(
             title="Select Master Workbook",
-            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+            filetypes=[("Excel files", "*.xlsx *.xlsm"), ("All files", "*.*")],
         )
         if path:
             self.workbook_var.set(path)
