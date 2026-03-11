@@ -84,7 +84,7 @@ class PdfProcessWorker(threading.Thread):
 
     def run(self):
         from main import detect_bank, BANK_PARSERS
-        from excel_writer import append_row, update_charts
+        from excel_writer import append_row, deduplicate_pricing_rows, update_charts
 
         total = len(self.pdf_paths)
         success = 0
@@ -101,11 +101,6 @@ class PdfProcessWorker(threading.Thread):
                     msg = _format_dry_run(data)
                 else:
                     append_row(self.master_file, data)
-                    update_charts(
-                        self.master_file,
-                        avg_start_year=self.avg_start_year,
-                        avg_end_year=self.avg_end_year,
-                    )
                     msg = f"{data['bank']} - {date_str} - Written to workbook"
 
                 success += 1
@@ -119,6 +114,27 @@ class PdfProcessWorker(threading.Thread):
 
             if self.on_progress:
                 self.app.after(0, self.on_progress, (idx + 1) / total)
+
+        # Keep workbook post-processing batched to one dedupe + chart rebuild.
+        if not self.dry_run and success > 0:
+            try:
+                removed = deduplicate_pricing_rows(self.master_file)
+                update_charts(
+                    self.master_file,
+                    avg_start_year=self.avg_start_year,
+                    avg_end_year=self.avg_end_year,
+                )
+                if self.on_result:
+                    post_msg = (
+                        "Post-processing complete: "
+                        f"removed {removed} duplicate row(s); rebuilt charts."
+                    )
+                    self.app.after(0, self.on_result, post_msg, True)
+            except Exception as exc:
+                failed += 1
+                if self.on_result:
+                    post_msg = f"Post-processing failed: {exc}"
+                    self.app.after(0, self.on_result, post_msg, False)
 
         summary = f"Done: {success} succeeded, {failed} failed"
         if self.on_complete:
@@ -151,7 +167,7 @@ class OutlookFetchWorker(threading.Thread):
         try:
             from email_fetcher import connect_outlook, fetch_bcecn_pdfs
             from main import detect_bank, BANK_PARSERS
-            from excel_writer import append_row, update_charts
+            from excel_writer import append_row, deduplicate_pricing_rows, update_charts
 
             def status_callback(msg):
                 _open_device_code_url(msg, app=self.app)
@@ -185,11 +201,6 @@ class OutlookFetchWorker(threading.Thread):
                         msg = _format_dry_run(data)
                     else:
                         append_row(self.master_file, data)
-                        update_charts(
-                            self.master_file,
-                            avg_start_year=self.avg_start_year,
-                            avg_end_year=self.avg_end_year,
-                        )
                         msg = f"{data['bank']} - {date_str} - Written to workbook"
 
                     success += 1
@@ -203,6 +214,27 @@ class OutlookFetchWorker(threading.Thread):
 
                 if self.on_progress:
                     self.app.after(0, self.on_progress, (idx + 1) / total)
+
+            # Keep workbook post-processing batched to one dedupe + chart rebuild.
+            if not self.dry_run and success > 0:
+                try:
+                    removed = deduplicate_pricing_rows(self.master_file)
+                    update_charts(
+                        self.master_file,
+                        avg_start_year=self.avg_start_year,
+                        avg_end_year=self.avg_end_year,
+                    )
+                    if self.on_result:
+                        post_msg = (
+                            "Post-processing complete: "
+                            f"removed {removed} duplicate row(s); rebuilt charts."
+                        )
+                        self.app.after(0, self.on_result, post_msg, True)
+                except Exception as exc:
+                    failed += 1
+                    if self.on_result:
+                        post_msg = f"Post-processing failed: {exc}"
+                        self.app.after(0, self.on_result, post_msg, False)
 
             summary = f"Done: {success} succeeded, {failed} failed (from {total} PDFs fetched)"
             if self.on_complete:

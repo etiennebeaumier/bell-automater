@@ -271,7 +271,12 @@ def print_dry_run_preview(pdf_path: str, data: dict) -> None:
 
 
 def process_pdf(pdf_path: str, master_file: str = MASTER_FILE, dry_run: bool = False):
-    """Parse a single PDF and write its data to the Master File."""
+    """Parse one PDF and append its row to the workbook.
+
+    In non-dry-run mode, this function only performs the row append.
+    End-of-run deduplication and chart rebuilding are handled by
+    `process_many_pdfs` so they run once per batch.
+    """
     bank_key = detect_bank(pdf_path)
     parser = BANK_PARSERS.get(bank_key)
     if not parser:
@@ -284,17 +289,23 @@ def process_pdf(pdf_path: str, master_file: str = MASTER_FILE, dry_run: bool = F
         print_dry_run_preview(pdf_path, data)
         return data
 
-    from excel_writer import append_row, update_charts
+    from excel_writer import append_row
 
     print(f"Writing to {master_file}...")
     append_row(master_file, data)
-    update_charts(master_file)
-    print("Done.")
+    print("Write complete.")
     return data
 
 
 def process_many_pdfs(pdf_paths: list[str], master_file: str, dry_run: bool = False) -> bool:
-    """Process a list of PDFs and print a concise success/failure summary."""
+    """Process PDFs and run one post-processing step at the end.
+
+    Non-dry-run behavior:
+    1) Parse and append rows for each successful PDF.
+    2) Once all files are attempted, deduplicate Pricing rows by
+       (date, bank case-insensitive), keeping newest rows.
+    3) Rebuild Summary Charts once from the final workbook state.
+    """
     success = 0
     failed = 0
 
@@ -305,6 +316,20 @@ def process_many_pdfs(pdf_paths: list[str], master_file: str, dry_run: bool = Fa
         except Exception as exc:
             failed += 1
             print(f"Error processing {pdf_path}: {exc}")
+
+    if not dry_run and success > 0:
+        from excel_writer import deduplicate_pricing_rows, update_charts
+
+        try:
+            removed = deduplicate_pricing_rows(master_file)
+            update_charts(master_file)
+            print(
+                "Post-processing: "
+                f"removed {removed} duplicate row(s) and rebuilt Summary Charts."
+            )
+        except Exception as exc:
+            failed += 1
+            print(f"Post-processing failed: {exc}")
 
     print(f"\nRun summary: {success} succeeded, {failed} failed.")
     return failed == 0

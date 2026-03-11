@@ -144,11 +144,11 @@ class UpdateChartsWeeklyAverageTests(unittest.TestCase):
             self.assertEqual([week for week, _ in usd_points], [date(2024, 1, 1), date(2024, 1, 8)])
 
             expected_cad = [
-                [95.0, 105.0, 125.0, 145.0],
+                [319.75, 327.25, 342.25, 357.25],
                 [120.0, 130.0, 150.0, 170.0],
             ]
             expected_usd = [
-                [195.0, 205.0, 225.0, 245.0],
+                [394.75, 402.25, 417.25, 432.25],
                 [220.0, 230.0, 250.0, 270.0],
             ]
 
@@ -194,6 +194,100 @@ class UpdateChartsWeeklyAverageTests(unittest.TestCase):
             self.assertEqual(
                 _chart_title_text(ws._charts[5]),
                 "Bell Canada - USD Average Spread Through Time (2024-2025)",
+            )
+
+
+class DeduplicatePricingRowsTests(unittest.TestCase):
+    def _create_workbook(self, path, rows):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Pricing"
+        ws.cell(row=1, column=1, value="Date")
+        ws.cell(row=1, column=2, value="Bank")
+        ws.cell(row=1, column=3, value="CAD 3Y Spread")
+        for row_number, row_values in enumerate(rows, start=2):
+            ws.cell(row=row_number, column=1, value=row_values["date"])
+            ws.cell(row=row_number, column=2, value=row_values["bank"])
+            ws.cell(row=row_number, column=3, value=row_values["spread"])
+        wb.save(path)
+
+    def _read_pricing_rows(self, path):
+        wb = load_workbook(path)
+        ws = wb["Pricing"]
+        rows = []
+        for row_number in range(2, ws.max_row + 1):
+            rows.append(
+                (
+                    _to_date(ws.cell(row=row_number, column=1).value),
+                    ws.cell(row=row_number, column=2).value,
+                    ws.cell(row=row_number, column=3).value,
+                )
+            )
+        return rows
+
+    def test_duplicate_date_bank_keeps_newest_case_insensitive(self):
+        with TemporaryDirectory() as temp_dir:
+            workbook_path = f"{temp_dir}/master.xlsx"
+            self._create_workbook(
+                workbook_path,
+                rows=[
+                    {"date": date(2024, 1, 2), "bank": "BankA", "spread": 100},
+                    {"date": date(2024, 1, 2), "bank": "banka", "spread": 999},
+                    {"date": date(2024, 1, 3), "bank": "BankB", "spread": 120},
+                    {"date": date(2024, 1, 3), "bank": "BANKB", "spread": 130},
+                ],
+            )
+
+            removed = excel_writer.deduplicate_pricing_rows(workbook_path)
+            self.assertEqual(removed, 2)
+
+            self.assertEqual(
+                self._read_pricing_rows(workbook_path),
+                [
+                    (date(2024, 1, 2), "banka", 999),
+                    (date(2024, 1, 3), "BANKB", 130),
+                ],
+            )
+
+    def test_non_duplicate_rows_remain_unchanged(self):
+        with TemporaryDirectory() as temp_dir:
+            workbook_path = f"{temp_dir}/master.xlsx"
+            rows = [
+                {"date": date(2024, 1, 2), "bank": "BankA", "spread": 100},
+                {"date": date(2024, 1, 3), "bank": "BankA", "spread": 110},
+                {"date": date(2024, 1, 2), "bank": "BankB", "spread": 90},
+            ]
+            self._create_workbook(workbook_path, rows=rows)
+
+            before = self._read_pricing_rows(workbook_path)
+            removed = excel_writer.deduplicate_pricing_rows(workbook_path)
+            after = self._read_pricing_rows(workbook_path)
+
+            self.assertEqual(removed, 0)
+            self.assertEqual(after, before)
+
+    def test_rows_missing_date_or_bank_are_untouched(self):
+        with TemporaryDirectory() as temp_dir:
+            workbook_path = f"{temp_dir}/master.xlsx"
+            self._create_workbook(
+                workbook_path,
+                rows=[
+                    {"date": date(2024, 1, 2), "bank": "BankA", "spread": 100},
+                    {"date": date(2024, 1, 2), "bank": "banka", "spread": 999},
+                    {"date": None, "bank": "NoDate", "spread": 10},
+                    {"date": date(2024, 1, 4), "bank": None, "spread": 11},
+                ],
+            )
+
+            removed = excel_writer.deduplicate_pricing_rows(workbook_path)
+            self.assertEqual(removed, 1)
+            self.assertEqual(
+                self._read_pricing_rows(workbook_path),
+                [
+                    (date(2024, 1, 2), "banka", 999),
+                    (None, "NoDate", 10),
+                    (date(2024, 1, 4), None, 11),
+                ],
             )
 
 

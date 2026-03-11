@@ -12,8 +12,8 @@ The repository also includes Power Automate, Azure Function, and Office Script a
 - Parses BCECN PDFs from TD, Scotiabank, CIBC, NBCM, and BMO
 - Extracts CAD and USD spreads and yields for 3Y, 5Y, 7Y, 10Y, and 30Y tenors
 - Extracts CAD and USD NC5 and NC10 spread/coupon fields when present
-- Appends one row per PDF into the `Pricing` sheet
-- Rebuilds six charts in `Summary Charts` (4 core curves + 2 weekly average spread charts)
+- Appends one row per PDF into the `Pricing` sheet during processing
+- Runs end-of-run post-processing (non-dry-run only): removes duplicate `Pricing` rows by `(date, bank)` case-insensitively (keep newest), then rebuilds six charts once in `Summary Charts`
 - Optionally fetches matching BCECN PDF attachments from Outlook / Exchange Online
 - Supports dry-run mode to preview parsed data without writing
 
@@ -74,7 +74,7 @@ ui/                                    CustomTkinter GUI package
 config.py                             JSON config manager
 main.py                               CLI entry point, orchestration
 email_fetcher.py                       Outlook / Exchange Online fetch logic
-excel_writer.py                        Workbook append + chart generation
+excel_writer.py                        Workbook append, dedupe, and chart generation
 parsers/                               Bank-specific PDF parsers
 build_mac.sh                           macOS build script
 build_win.bat                          Windows build script
@@ -138,7 +138,7 @@ Run automated tests:
 python3 -m unittest discover -s tests -v
 ```
 
-Current test coverage includes weekly average-chart aggregation logic, year-range filtering behavior, and chart-output regressions.
+Current test coverage includes weekly average-chart aggregation logic, year-range filtering behavior, chart-output regressions, workbook deduplication behavior, and CLI post-processing orchestration.
 
 ## CLI Usage
 
@@ -201,7 +201,14 @@ python3 main.py
 - Column A: date
 - Column B: bank name
 - Columns C through AD: parsed CAD and USD spreads, yields, and NC values
-- Six line charts are rebuilt on each non-dry-run write
+- For non-dry-run runs, duplicate `Pricing` rows are removed once at end-of-run, then six charts are rebuilt once
+
+### Duplicate Handling
+
+- Duplicate key: `(Date, Bank)` with bank matched case-insensitively
+- Keep policy: newest row in workbook order is preserved
+- Scope: Python desktop and CLI workflows
+- Rows with missing date or bank are not part of deduplication and are left untouched
 
 ### Summary Charts Outputs
 
@@ -217,7 +224,7 @@ Core chart behavior:
 - X-axis is tenor (`3Y`, `5Y`, `7Y`, `10Y`, `30Y`).
 
 Weekly average chart behavior:
-- Uses deduplicated rows by `(date, bank)` with bank matched case-insensitively.
+- Uses deduplicated rows by `(date, bank)` with bank matched case-insensitively, keeping the newest row.
 - Applies an inclusive year filter from UI settings (`Start Year` / `End Year`), swapping bounds if selected in reverse.
 - Buckets rows by ISO week and labels categories with the Monday week-start date.
 - For each tenor and week, computes per-bank means first, then an equal-weight average across banks.
@@ -242,6 +249,7 @@ The `power_automate/` folder contains a cloud-hosted variant of the workflow:
 - `office_script/`: Excel Online script that appends rows and rebuilds charts
 
 Use this path when the process should run automatically on mailbox arrival rather than from a local machine.
+Note: the end-of-run Pricing deduplication described above applies to the local Python app/CLI path.
 
 ## Troubleshooting
 

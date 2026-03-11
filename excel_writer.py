@@ -137,16 +137,56 @@ def _collect_pricing_rows(ws_data):
     return rows
 
 
+def _row_dedup_key(row):
+    return row["date"], row["bank"].casefold()
+
+
 def _dedupe_rows_by_date_bank(rows):
+    """Keep only the newest row for each (date, bank) key."""
     seen = set()
-    deduped = []
-    for row in rows:
-        key = (row["date"], row["bank"].casefold())
+    deduped_reverse = []
+    for row in reversed(rows):
+        key = _row_dedup_key(row)
         if key in seen:
             continue
         seen.add(key)
-        deduped.append(row)
-    return deduped
+        deduped_reverse.append(row)
+    return list(reversed(deduped_reverse))
+
+
+def deduplicate_pricing_rows(master_file_path: str) -> int:
+    """Remove duplicate Pricing rows by (date, bank), keeping the newest row.
+
+    Rows missing either date or bank are ignored and left untouched.
+    Returns the number of deleted rows.
+    """
+    wb = load_workbook(master_file_path, keep_vba=_is_macro_enabled(master_file_path))
+    ws_data = wb["Pricing"]
+
+    latest_row_by_key = {}
+    row_key_by_index = {}
+
+    for r in range(2, ws_data.max_row + 1):
+        date_val = _normalize_date(ws_data.cell(row=r, column=1).value)
+        bank_val = _normalize_bank(ws_data.cell(row=r, column=2).value)
+        if not date_val or not bank_val:
+            continue
+        key = (date_val, bank_val.casefold())
+        row_key_by_index[r] = key
+        latest_row_by_key[key] = r
+
+    rows_to_delete = [
+        row_index
+        for row_index, key in row_key_by_index.items()
+        if latest_row_by_key[key] != row_index
+    ]
+    for row_index in sorted(rows_to_delete, reverse=True):
+        ws_data.delete_rows(row_index, 1)
+
+    if rows_to_delete:
+        wb.save(master_file_path)
+
+    return len(rows_to_delete)
 
 
 def _latest_per_bank(rows):
@@ -401,6 +441,9 @@ def update_charts(master_file_path: str, avg_start_year=None, avg_end_year=None)
     Each average chart plots ISO-week (Monday) categories and 4 tenor series
     (3Y, 5Y, 10Y, 30Y), bounded by the inclusive `avg_start_year` /
     `avg_end_year` filter.
+
+    Input rows are deduplicated by (date, bank case-insensitive), keeping
+    the newest row for each key.
     """
     wb = load_workbook(master_file_path, keep_vba=_is_macro_enabled(master_file_path))
     ws_data = wb["Pricing"]
