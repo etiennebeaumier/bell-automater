@@ -3,6 +3,7 @@
 import os
 from tkinter import filedialog
 import customtkinter as ctk
+from config import get_default_pdf_dir
 
 
 class PdfTab(ctk.CTkFrame):
@@ -10,6 +11,7 @@ class PdfTab(ctk.CTkFrame):
         super().__init__(master, **kwargs)
         self.app_window = app_window
         self.selected_files = []
+        self._is_processing = False
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
@@ -57,16 +59,22 @@ class PdfTab(ctk.CTkFrame):
         self.process_btn.grid(row=5, column=0, padx=16, pady=(4, 16), sticky="ew")
 
     def _select_files(self):
+        initial_dir = self._get_default_pdf_dir()
         paths = filedialog.askopenfilenames(
             title="Select BCECN PDF Files",
             filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
+            initialdir=initial_dir,
         )
         if paths:
             self.selected_files = list(paths)
             self._update_file_list()
+            self._maybe_autoprocess()
 
     def _select_folder(self):
-        folder = filedialog.askdirectory(title="Select Folder Containing BCECN PDFs")
+        folder = filedialog.askdirectory(
+            title="Select Folder Containing BCECN PDFs",
+            initialdir=self._get_default_pdf_dir(),
+        )
         if folder:
             pdfs = sorted(
                 os.path.join(folder, f)
@@ -76,6 +84,7 @@ class PdfTab(ctk.CTkFrame):
             if pdfs:
                 self.selected_files = pdfs
                 self._update_file_list()
+                self._maybe_autoprocess()
 
     def _clear_files(self):
         self.selected_files = []
@@ -96,14 +105,32 @@ class PdfTab(ctk.CTkFrame):
             self.process_btn.configure(state="disabled")
         self.file_list.configure(state="disabled")
 
+    def _get_default_pdf_dir(self) -> str:
+        preferred = get_default_pdf_dir()
+        if os.path.isdir(preferred):
+            return preferred
+        automation_dir = os.path.dirname(preferred)
+        if os.path.isdir(automation_dir):
+            return automation_dir
+        return os.path.expanduser("~")
+
     def _process_files(self):
+        if self._is_processing:
+            return
+
         settings = self.app_window.settings
+        if not self._has_valid_selected_files():
+            from tkinter import messagebox
+            messagebox.showerror("File Error", "Selected files must all be PDFs.")
+            return
+
         if not settings.dry_run and not settings.is_workbook_ready():
             from tkinter import messagebox
             messagebox.showerror("Workbook Error", "Workbook is not ready. Fix the path in settings or enable dry-run mode.")
             return
 
         self._set_processing(True)
+        self._is_processing = True
         self.progress.grid()
         self.progress.set(0)
 
@@ -127,8 +154,11 @@ class PdfTab(ctk.CTkFrame):
 
     def _on_complete(self, summary):
         self.app_window.results.log(summary)
+        self.app_window.results.log("All selected documents were processed. Closing application...")
+        self._is_processing = False
         self._set_processing(False)
         self.progress.grid_remove()
+        self.winfo_toplevel().after(300, self.winfo_toplevel().destroy)
 
     def _set_processing(self, active):
         state = "disabled" if active else "normal"
@@ -136,3 +166,16 @@ class PdfTab(ctk.CTkFrame):
         self.select_btn.configure(state=state)
         self.select_folder_btn.configure(state=state)
         self.clear_btn.configure(state=state)
+
+    def _has_valid_selected_files(self) -> bool:
+        if not self.selected_files:
+            return False
+        return all(os.path.isfile(path) and path.lower().endswith(".pdf") for path in self.selected_files)
+
+    def _maybe_autoprocess(self):
+        if self._is_processing or not self._has_valid_selected_files():
+            return
+
+        settings = self.app_window.settings
+        if settings.is_workbook_ready():
+            self._process_files()

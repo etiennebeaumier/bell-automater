@@ -7,8 +7,50 @@ import pathlib
 CONFIG_DIR = pathlib.Path.home() / ".bcecn_pricing"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
+SHAREPOINT_AUTOMATION_RELATIVE = (
+    pathlib.Path("Bell Canada")
+    / "MTRLPQDC304 - Capit_Market"
+    / "Automation"
+)
+DEFAULT_MASTER_FILENAME = "Master File - EB.xlsm"
+DEFAULT_PDF_SUBDIR = "PDF"
+
+
+def _sharepoint_root_candidates() -> list[pathlib.Path]:
+    """Return likely local roots for SharePoint/OneDrive-synced folders."""
+    candidates = [pathlib.Path.home()]
+    userprofile = os.environ.get("USERPROFILE")
+    if userprofile:
+        candidates.append(pathlib.Path(userprofile))
+
+    deduped: list[pathlib.Path] = []
+    seen = set()
+    for candidate in candidates:
+        key = str(candidate).lower()
+        if key not in seen:
+            deduped.append(candidate)
+            seen.add(key)
+    return deduped
+
+
+def get_default_automation_dir() -> str:
+    """Resolve the best local SharePoint automation folder for this user profile."""
+    for root in _sharepoint_root_candidates():
+        candidate = root / SHAREPOINT_AUTOMATION_RELATIVE
+        if candidate.exists():
+            return str(candidate)
+    return str(_sharepoint_root_candidates()[0] / SHAREPOINT_AUTOMATION_RELATIVE)
+
+
+def get_default_pdf_dir() -> str:
+    return str(pathlib.Path(get_default_automation_dir()) / DEFAULT_PDF_SUBDIR)
+
+
+def get_default_master_file() -> str:
+    return str(pathlib.Path(get_default_automation_dir()) / DEFAULT_MASTER_FILENAME)
+
 DEFAULTS = {
-    "master_file": "",
+    "master_file": get_default_master_file(),
     "outlook_email": "",
     "outlook_server": "outlook.office365.com",
     "outlook_days": 7,

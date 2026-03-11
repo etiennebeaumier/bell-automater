@@ -3,6 +3,7 @@
 import os
 from tkinter import filedialog
 import customtkinter as ctk
+from config import get_default_master_file
 
 
 class SettingsPanel(ctk.CTkFrame):
@@ -28,7 +29,9 @@ class SettingsPanel(ctk.CTkFrame):
         path_frame.grid(row=3, column=0, padx=16, pady=(0, 4), sticky="ew")
         path_frame.grid_columnconfigure(0, weight=1)
 
-        self.workbook_var = ctk.StringVar(value=config.get("master_file", ""))
+        configured_workbook = config.get("master_file", "")
+        default_workbook = configured_workbook or get_default_master_file()
+        self.workbook_var = ctk.StringVar(value=default_workbook)
         self.workbook_entry = ctk.CTkEntry(path_frame, textvariable=self.workbook_var, placeholder_text="Select workbook...")
         self.workbook_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6))
 
@@ -67,9 +70,13 @@ class SettingsPanel(ctk.CTkFrame):
         self.workbook_var.trace_add("write", lambda *_: self._on_workbook_change())
 
     def _browse_workbook(self):
+        seed_path = self.workbook_var.get() or get_default_master_file()
+        initial_dir = os.path.dirname(seed_path) if seed_path else os.path.expanduser("~")
         path = filedialog.askopenfilename(
             title="Select Master Workbook",
             filetypes=[("Excel files", "*.xlsx *.xlsm"), ("All files", "*.*")],
+            initialdir=initial_dir,
+            initialfile=os.path.basename(seed_path) if seed_path else "",
         )
         if path:
             self.workbook_var.set(path)
