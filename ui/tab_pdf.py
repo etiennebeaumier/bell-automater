@@ -67,6 +67,7 @@ class PdfTab(ctk.CTkFrame):
         )
         if paths:
             self.selected_files = list(paths)
+            self._remember_pdf_source(os.path.dirname(paths[0]))
             self._update_file_list()
             self._maybe_autoprocess()
 
@@ -76,6 +77,7 @@ class PdfTab(ctk.CTkFrame):
             initialdir=self._get_default_pdf_dir(),
         )
         if folder:
+            self._remember_pdf_source(folder)
             pdfs = sorted(
                 os.path.join(folder, f)
                 for f in os.listdir(folder)
@@ -106,6 +108,16 @@ class PdfTab(ctk.CTkFrame):
         self.file_list.configure(state="disabled")
 
     def _get_default_pdf_dir(self) -> str:
+        settings = getattr(self.app_window, "settings", None)
+        if settings:
+            configured = settings.pdf_source_dir.strip()
+            if configured and os.path.isdir(configured):
+                return configured
+            if configured:
+                parent = os.path.dirname(configured)
+                if parent and os.path.isdir(parent):
+                    return parent
+
         preferred = get_default_pdf_dir()
         if os.path.isdir(preferred):
             return preferred
@@ -113,6 +125,11 @@ class PdfTab(ctk.CTkFrame):
         if os.path.isdir(automation_dir):
             return automation_dir
         return os.path.expanduser("~")
+
+    def _remember_pdf_source(self, directory: str):
+        settings = getattr(self.app_window, "settings", None)
+        if settings and directory and os.path.isdir(directory):
+            settings.set_pdf_source_dir(directory)
 
     def _process_files(self):
         if self._is_processing:

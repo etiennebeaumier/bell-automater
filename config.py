@@ -44,18 +44,17 @@ def get_default_automation_dir() -> str:
 
 
 def get_default_pdf_dir() -> str:
+    """Return the default local folder used for PDF intake."""
     return str(pathlib.Path(get_default_automation_dir()) / DEFAULT_PDF_SUBDIR)
 
 
 def get_default_master_file() -> str:
+    """Return the default master workbook path."""
     return str(pathlib.Path(get_default_automation_dir()) / DEFAULT_MASTER_FILENAME)
 
 DEFAULTS = {
     "master_file": get_default_master_file(),
-    "outlook_email": "",
-    "outlook_server": "outlook.office365.com",
-    "outlook_days": 7,
-    "bcecn_sender": "",
+    "pdf_source_dir": get_default_pdf_dir(),
     "appearance_mode": "dark",
     "dry_run": False,
     "avg_start_year": datetime.now().year,
@@ -64,7 +63,10 @@ DEFAULTS = {
 
 
 class AppConfig:
+    """JSON-backed configuration storage for desktop app preferences."""
+
     def __init__(self):
+        """Initialize config with defaults, then migrate/load persisted values."""
         self._data = dict(DEFAULTS)
         self._migrate_env()
         self.load()
@@ -93,23 +95,15 @@ class AppConfig:
 
         mapping = {
             "MASTER_FILE": "master_file",
-            "OUTLOOK_EMAIL": "outlook_email",
-            "OUTLOOK_SERVER": "outlook_server",
-            "OUTLOOK_DAYS": "outlook_days",
-            "BCECN_SENDER": "bcecn_sender",
+            "PDF_SOURCE_DIR": "pdf_source_dir",
         }
         for env_key, cfg_key in mapping.items():
             if env_key in env_vals and env_vals[env_key]:
-                val = env_vals[env_key]
-                if cfg_key == "outlook_days":
-                    try:
-                        val = int(val)
-                    except ValueError:
-                        continue
-                self._data[cfg_key] = val
+                self._data[cfg_key] = env_vals[env_key]
         self.save()
 
     def load(self):
+        """Load persisted config values from disk when available."""
         if CONFIG_FILE.exists():
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -121,18 +115,23 @@ class AppConfig:
                 pass
 
     def save(self):
+        """Persist current config values to disk."""
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(self._data, f, indent=2)
 
     def get(self, key, default=None):
+        """Read a config value with optional fallback."""
         return self._data.get(key, default)
 
     def set(self, key, value):
+        """Set a config value in memory."""
         self._data[key] = value
 
     def __getitem__(self, key):
+        """Dictionary-style key access."""
         return self._data[key]
 
     def __setitem__(self, key, value):
+        """Dictionary-style key assignment."""
         self._data[key] = value

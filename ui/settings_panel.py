@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 from tkinter import filedialog
 import customtkinter as ctk
-from config import get_default_master_file
+from config import get_default_master_file, get_default_pdf_dir
 
 
 class SettingsPanel(ctk.CTkFrame):
@@ -19,7 +19,7 @@ class SettingsPanel(ctk.CTkFrame):
         title = ctk.CTkLabel(self, text="Control Panel", font=ctk.CTkFont(size=16, weight="bold"))
         title.grid(row=0, column=0, padx=16, pady=(16, 4), sticky="w")
 
-        subtitle = ctk.CTkLabel(self, text="Workbook path and execution mode", font=ctk.CTkFont(size=12), text_color="gray")
+        subtitle = ctk.CTkLabel(self, text="Workbook and PDF intake preferences", font=ctk.CTkFont(size=12), text_color="gray")
         subtitle.grid(row=1, column=0, padx=16, pady=(0, 12), sticky="w")
 
         # -- Workbook path --
@@ -39,17 +39,38 @@ class SettingsPanel(ctk.CTkFrame):
         browse_btn = ctk.CTkButton(path_frame, text="Browse", width=70, command=self._browse_workbook)
         browse_btn.grid(row=0, column=1)
 
+        # -- PDF source folder --
+        pdf_label = ctk.CTkLabel(self, text="PDF Source Folder", font=ctk.CTkFont(size=13, weight="bold"))
+        pdf_label.grid(row=4, column=0, padx=16, pady=(10, 2), sticky="w")
+
+        pdf_frame = ctk.CTkFrame(self, fg_color="transparent")
+        pdf_frame.grid(row=5, column=0, padx=16, pady=(0, 4), sticky="ew")
+        pdf_frame.grid_columnconfigure(0, weight=1)
+
+        configured_pdf_dir = config.get("pdf_source_dir", "")
+        default_pdf_dir = configured_pdf_dir or get_default_pdf_dir()
+        self.pdf_source_var = ctk.StringVar(value=default_pdf_dir)
+        self.pdf_source_entry = ctk.CTkEntry(
+            pdf_frame,
+            textvariable=self.pdf_source_var,
+            placeholder_text="Select folder used for PDF intake...",
+        )
+        self.pdf_source_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+
+        pdf_browse_btn = ctk.CTkButton(pdf_frame, text="Browse", width=70, command=self._browse_pdf_source)
+        pdf_browse_btn.grid(row=0, column=1)
+
         # -- Status indicator --
         self.status_label = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=12))
-        self.status_label.grid(row=4, column=0, padx=16, pady=(4, 8), sticky="w")
+        self.status_label.grid(row=6, column=0, padx=16, pady=(4, 8), sticky="w")
         self._update_status()
 
         # -- Year range for averaged spread charts --
         years_label = ctk.CTkLabel(self, text="Average Spread Year Range", font=ctk.CTkFont(size=13, weight="bold"))
-        years_label.grid(row=5, column=0, padx=16, pady=(10, 2), sticky="w")
+        years_label.grid(row=7, column=0, padx=16, pady=(10, 2), sticky="w")
 
         years_frame = ctk.CTkFrame(self, fg_color="transparent")
-        years_frame.grid(row=6, column=0, padx=16, pady=(0, 8), sticky="ew")
+        years_frame.grid(row=8, column=0, padx=16, pady=(0, 8), sticky="ew")
         years_frame.grid_columnconfigure(0, weight=1)
         years_frame.grid_columnconfigure(1, weight=1)
 
@@ -81,27 +102,28 @@ class SettingsPanel(ctk.CTkFrame):
             self, text="Dry run (preview only)", variable=self.dry_run_var,
             command=self._on_change,
         )
-        self.dry_run_check.grid(row=7, column=0, padx=16, pady=(8, 8), sticky="w")
+        self.dry_run_check.grid(row=9, column=0, padx=16, pady=(8, 8), sticky="w")
 
         # -- Appearance mode --
         theme_label = ctk.CTkLabel(self, text="Appearance", font=ctk.CTkFont(size=13, weight="bold"))
-        theme_label.grid(row=8, column=0, padx=16, pady=(16, 2), sticky="w")
+        theme_label.grid(row=10, column=0, padx=16, pady=(16, 2), sticky="w")
 
         self.theme_menu = ctk.CTkOptionMenu(
             self, values=["Dark", "Light", "System"],
             command=self._change_theme,
         )
         self.theme_menu.set(config.get("appearance_mode", "dark").capitalize())
-        self.theme_menu.grid(row=9, column=0, padx=16, pady=(0, 8), sticky="ew")
+        self.theme_menu.grid(row=11, column=0, padx=16, pady=(0, 8), sticky="ew")
 
         # -- Save settings button --
         save_btn = ctk.CTkButton(self, text="Save Settings", command=self._save_settings)
-        save_btn.grid(row=10, column=0, padx=16, pady=(16, 16), sticky="ew")
+        save_btn.grid(row=12, column=0, padx=16, pady=(16, 16), sticky="ew")
 
         self._refresh_year_options(prefer_config=True)
 
         # Bind entry change
         self.workbook_var.trace_add("write", lambda *_: self._on_workbook_change())
+        self.pdf_source_var.trace_add("write", lambda *_: self._on_change())
 
     def _browse_workbook(self):
         seed_path = self.workbook_var.get() or get_default_master_file()
@@ -114,6 +136,16 @@ class SettingsPanel(ctk.CTkFrame):
         )
         if path:
             self.workbook_var.set(path)
+
+    def _browse_pdf_source(self):
+        seed_dir = self.pdf_source_var.get() or get_default_pdf_dir()
+        initial_dir = seed_dir if os.path.isdir(seed_dir) else os.path.expanduser("~")
+        folder = filedialog.askdirectory(
+            title="Select Default PDF Source Folder",
+            initialdir=initial_dir,
+        )
+        if folder:
+            self.pdf_source_var.set(folder)
 
     def _on_workbook_change(self):
         self._update_status()
@@ -223,6 +255,7 @@ class SettingsPanel(ctk.CTkFrame):
 
     def _save_settings(self):
         self.config["master_file"] = self.workbook_var.get()
+        self.config["pdf_source_dir"] = self.pdf_source_var.get()
         self.config["dry_run"] = self.dry_run_var.get()
         self.config["appearance_mode"] = self.theme_menu.get().lower()
         self.config["avg_start_year"] = self.avg_start_year
@@ -234,6 +267,14 @@ class SettingsPanel(ctk.CTkFrame):
     @property
     def master_file(self) -> str:
         return self.workbook_var.get()
+
+    @property
+    def pdf_source_dir(self) -> str:
+        return self.pdf_source_var.get()
+
+    def set_pdf_source_dir(self, path: str):
+        if path and path != self.pdf_source_var.get():
+            self.pdf_source_var.set(path)
 
     @property
     def dry_run(self) -> bool:

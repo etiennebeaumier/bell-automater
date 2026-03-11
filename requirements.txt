@@ -1,6 +1,4 @@
 pdfplumber
 openpyxl
-exchangelib
-msal
 customtkinter
 pyinstaller

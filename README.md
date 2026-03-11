@@ -12,7 +12,6 @@ It runs as a standalone desktop application (no Python installation required) or
 - Extracts CAD and USD NC5 and NC10 spread/coupon fields when present
 - Appends one row per PDF into the `Pricing` sheet during processing
 - Runs end-of-run post-processing (non-dry-run only): removes duplicate `Pricing` rows by `(date, bank)` case-insensitively (keep newest), reorders rows by bank/date, then rebuilds six charts once in `Summary Charts`
-- Optionally fetches matching BCECN PDF attachments from Outlook / Exchange Online
 - Supports dry-run mode to preview parsed data without writing
 
 ## Desktop Application
@@ -22,12 +21,26 @@ The primary way to use the tool is the standalone desktop app, built with Custom
 ### Features
 
 - **Upload PDFs** tab: select one or more local PDFs, process or preview them
-- **Fetch from Outlook** tab: pull BCECN attachments from an Outlook mailbox using OAuth2 device-code authentication
 - **Dry-run mode**: preview parsed spreads, yields, and hybrid data in the results panel without writing to the workbook
 - **Dark / Light / System theme** toggle
-- **Persistent settings**: workbook path, email, server, and preferences saved to `~/.bcecn_pricing/config.json`
+- **Persistent settings**: workbook path, default PDF source folder, and preferences saved to `~/.bcecn_pricing/config.json`
+- **Quick startup mode**: when workbook + preferred PDF folder are valid and parseable PDFs are present, startup shows a small year-range prompt (`OK` or `Open GUI`) and can process/close without loading the full interface
 - **Average chart year controls**: `Start Year` / `End Year` dropdowns bound the weekly average spread charts
-- **Auto browser open**: during Outlook authentication, the sign-in URL opens automatically and the device code is copied to clipboard
+
+### Quick Startup Flow
+
+At app launch (`python3 app.py` or packaged app):
+
+1. Validate saved workbook path (`Pricing` and `Summary Charts` sheets required).
+2. Validate saved preferred PDF source folder.
+3. Check for at least one parseable PDF in that folder.
+
+If all checks pass, a small popup appears:
+- Choose `Start Year` / `End Year` for average spread charts.
+- Click `OK` to process PDFs immediately (append rows, dedupe/order, rebuild charts) and exit.
+- Click `Open GUI` to continue in the full interface.
+
+If any check fails, the app opens the full GUI by default.
 
 ### Running the App
 
@@ -65,13 +78,11 @@ app.py                                 Desktop app entry point
 ui/                                    CustomTkinter GUI package
   app_window.py                        Main window, tab layout, theme
   tab_pdf.py                           Upload PDFs tab
-  tab_outlook.py                       Fetch from Outlook tab
-  settings_panel.py                    Sidebar: workbook path, dry-run, theme
+  settings_panel.py                    Sidebar: workbook path, PDF source folder, dry-run, theme
   results_panel.py                     Scrollable log widget
   workers.py                           Background threading workers
 config.py                             JSON config manager
 main.py                               CLI entry point, orchestration
-email_fetcher.py                       Outlook / Exchange Online fetch logic
 excel_writer.py                        Workbook append, dedupe, and chart generation
 parsers/                               Bank-specific PDF parsers
 build_mac.sh                           macOS build script
@@ -91,8 +102,6 @@ No requirements. Run the executable directly.
 - Dependencies from `requirements.txt`:
   - `pdfplumber`
   - `openpyxl`
-  - `exchangelib`
-  - `msal`
   - `customtkinter`
   - `pyinstaller` (only needed for building)
 
@@ -102,10 +111,6 @@ A master workbook containing these sheets:
 
 - `Pricing`
 - `Summary Charts`
-
-### Outlook fetch
-
-A Microsoft 365 mailbox. Authentication uses the OAuth2 device-code flow — no password storage required.
 
 ## Setup (from source)
 
@@ -123,7 +128,7 @@ pip install -r requirements.txt
 python3 app.py
 ```
 
-Settings (workbook path, email, server, etc.) are configured in the GUI and persisted automatically to `~/.bcecn_pricing/config.json`.
+Settings (workbook path, default PDF source folder, etc.) are configured in the GUI and persisted automatically to `~/.bcecn_pricing/config.json`.
 
 ## Testing
 
@@ -163,12 +168,6 @@ python3 main.py --pdf "samples/BCECN 03.02.26.pdf" --dry-run
 python3 main.py --check
 ```
 
-### Outlook fetch
-
-```bash
-python3 main.py --fetch --check
-```
-
 ### Interactive terminal mode
 
 ```bash
@@ -181,11 +180,6 @@ python3 main.py
 --pdf PDF          Path to one PDF file
 --dir DIR          Directory containing PDF files
 --master MASTER    Path to the master workbook
---fetch            Fetch BCECN PDFs from Outlook
---email EMAIL      Outlook email address
---days DAYS        Days back to search emails
---server SERVER    Exchange server hostname
---sender SENDER    Optional sender email filter
 --dry-run          Parse only; do not write the workbook
 --check            Run preflight checks first
 --interactive      Force the interactive menu
@@ -243,12 +237,6 @@ Bank detection works by filename hints first, then first-page PDF text. If detec
 - Confirm the workbook path is correct in the settings panel
 - Confirm the workbook contains `Pricing` and `Summary Charts`
 - Use dry-run mode to test parsing without writing
-
-### Outlook fetch returns no PDFs
-
-- Confirm the mailbox contains emails with `BCECN` in the subject
-- Increase the search range with the Days Back setting or `--days`
-- Remove or loosen the sender filter
 
 ### Bank detection fails
 

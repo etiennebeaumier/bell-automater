@@ -3,7 +3,6 @@
 import customtkinter as ctk
 from ui.settings_panel import SettingsPanel
 from ui.tab_pdf import PdfTab
-from ui.tab_outlook import OutlookTab
 from ui.results_panel import ResultsPanel
 
 
@@ -62,13 +61,9 @@ class AppWindow(ctk.CTk):
         self.tabview.grid(row=1, column=0, sticky="nsew", pady=(0, 4))
 
         self.tabview.add("Upload PDFs")
-        self.tabview.add("Fetch from Outlook")
 
         self.pdf_tab = PdfTab(self.tabview.tab("Upload PDFs"), app_window=self)
         self.pdf_tab.pack(fill="both", expand=True)
-
-        self.outlook_tab = OutlookTab(self.tabview.tab("Fetch from Outlook"), app_window=self, config=config)
-        self.outlook_tab.pack(fill="both", expand=True)
 
         # -- Results panel --
         self.results = ResultsPanel(right_frame)

@@ -5,12 +5,6 @@ Usage:
     # Process a local PDF file:
     python main.py --pdf "BCECN 03.02.26.pdf"
 
-    # Fetch from Outlook and process:
-    python main.py --fetch --email etienne.beaumier@bell.ca
-
-    # Or configure .env and just run:
-    python main.py --fetch
-
     # Process all PDFs in a directory:
     python main.py --dir ./pdfs/
 """
@@ -63,18 +57,6 @@ def load_env_file(path: str = ".env") -> None:
             os.environ.setdefault(key, value)
 
 
-def env_int(name: str, default: int) -> int:
-    """Read an integer from environment with a safe fallback."""
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        print(f"Warning: invalid {name}={raw!r}; using {default}")
-        return default
-
-
 def _module_available(module_name: str) -> bool:
     """Return True if a Python module can be imported."""
     return importlib.util.find_spec(module_name) is not None
@@ -83,14 +65,9 @@ def _module_available(module_name: str) -> bool:
 def run_preflight(
     master_file: str,
     require_workbook: bool = True,
-    check_fetch: bool = False,
-    email: str | None = None,
-    days: int | None = None,
-    server: str | None = None,
-    sender: str | None = None,
     verbose: bool = True,
 ) -> bool:
-    """Validate environment, dependencies, workbook, and optional fetch config."""
+    """Validate environment, dependencies, and workbook configuration."""
     failures = 0
     warnings = 0
 
@@ -124,12 +101,6 @@ def run_preflight(
     else:
         report("WARN", "openpyxl is missing. Install with `pip install openpyxl` before non-dry-run writes.")
 
-    if check_fetch:
-        if _module_available("exchangelib"):
-            report("PASS", "Dependency check: exchangelib available for Outlook fetch.")
-        else:
-            report("FAIL", "Missing dependency: exchangelib. Install with `pip install exchangelib`.")
-
     if require_workbook:
         if not os.path.exists(master_file):
             report("FAIL", f"Master workbook not found: {master_file}")
@@ -154,27 +125,6 @@ def run_preflight(
                 report("FAIL", f"Failed to open workbook '{master_file}': {exc}")
     else:
         report("PASS", "Workbook validation skipped (dry-run mode).")
-
-    if check_fetch:
-        if email:
-            report("PASS", f"Fetch config: email set to {email}.")
-        else:
-            report("FAIL", "Fetch config: missing Outlook email. Use --email or OUTLOOK_EMAIL.")
-
-        if server:
-            report("PASS", f"Fetch config: server set to {server}.")
-        else:
-            report("FAIL", "Fetch config: missing Outlook server. Use --server or OUTLOOK_SERVER.")
-
-        if days is None or days < 1:
-            report("FAIL", "Fetch config: days must be >= 1.")
-        else:
-            report("PASS", f"Fetch config: searching last {days} day(s).")
-
-        if sender:
-            report("PASS", f"Fetch config: sender filter enabled ({sender}).")
-        else:
-            report("WARN", "Fetch config: no sender filter set; search scope may be broad.")
 
     if verbose or failures:
         if failures:
@@ -297,14 +247,21 @@ def process_pdf(pdf_path: str, master_file: str = MASTER_FILE, dry_run: bool = F
     return data
 
 
-def process_many_pdfs(pdf_paths: list[str], master_file: str, dry_run: bool = False) -> bool:
+def process_many_pdfs(
+    pdf_paths: list[str],
+    master_file: str,
+    dry_run: bool = False,
+    avg_start_year: int | None = None,
+    avg_end_year: int | None = None,
+) -> bool:
     """Process PDFs and run one post-processing step at the end.
 
     Non-dry-run behavior:
     1) Parse and append rows for each successful PDF.
     2) Once all files are attempted, deduplicate Pricing rows by
        (date, bank case-insensitive), keeping newest rows.
-    3) Rebuild Summary Charts once from the final workbook state.
+    3) Rebuild Summary Charts once from the final workbook state,
+       optionally bounded by `avg_start_year` / `avg_end_year`.
     """
     success = 0
     failed = 0
@@ -322,7 +279,14 @@ def process_many_pdfs(pdf_paths: list[str], master_file: str, dry_run: bool = Fa
 
         try:
             removed = deduplicate_pricing_rows(master_file)
-            update_charts(master_file)
+            if avg_start_year is None and avg_end_year is None:
+                update_charts(master_file)
+            else:
+                update_charts(
+                    master_file,
+                    avg_start_year=avg_start_year,
+                    avg_end_year=avg_end_year,
+                )
             print(
                 "Post-processing: "
                 f"removed {removed} duplicate row(s) and rebuilt Summary Charts."
@@ -363,30 +327,7 @@ def prompt_yes_no(prompt: str, default: bool = False) -> bool:
         print("Please answer with y or n.")
 
 
-def prompt_int(prompt: str, default: int, minimum: int = 1) -> int:
-    """Prompt for an integer with minimum bound."""
-    while True:
-        raw = input(f"{prompt} [{default}]: ").strip()
-        if not raw:
-            return default
-        try:
-            value = int(raw)
-        except ValueError:
-            print("Please enter a valid integer.")
-            continue
-        if value < minimum:
-            print(f"Please enter a value >= {minimum}.")
-            continue
-        return value
-
-
-def interactive_mode(
-    default_master: str,
-    default_email: str,
-    default_days: int,
-    default_server: str,
-    default_sender: str | None,
-) -> None:
+def interactive_mode(default_master: str) -> None:
     """Run interactive menu mode for no-argument usage."""
     print("Interactive mode")
 
@@ -394,12 +335,11 @@ def interactive_mode(
         print("\nChoose an action:")
         print("1) Process one PDF")
         print("2) Process all PDFs in a directory")
-        print("3) Fetch PDFs from Outlook and process")
-        print("4) Run preflight checks")
-        print("5) Exit")
+        print("3) Run preflight checks")
+        print("4) Exit")
 
-        choice = input("Selection [1-5]: ").strip().lower()
-        if choice in {"5", "q", "quit", "exit"}:
+        choice = input("Selection [1-4]: ").strip().lower()
+        if choice in {"4", "q", "quit", "exit"}:
             return
 
         if choice == "1":
@@ -409,7 +349,6 @@ def interactive_mode(
             if not run_preflight(
                 master_file=master_file,
                 require_workbook=not dry_run,
-                check_fetch=False,
                 verbose=True,
             ):
                 if not prompt_yes_no("Preflight failed. Continue anyway", default=False):
@@ -435,7 +374,6 @@ def interactive_mode(
             if not run_preflight(
                 master_file=master_file,
                 require_workbook=not dry_run,
-                check_fetch=False,
                 verbose=True,
             ):
                 if not prompt_yes_no("Preflight failed. Continue anyway", default=False):
@@ -444,120 +382,43 @@ def interactive_mode(
             continue
 
         if choice == "3":
-            from email_fetcher import connect_outlook, fetch_bcecn_pdfs
-
-            email = prompt_with_default("Outlook email", default_email, required=True)
-            server = prompt_with_default("Exchange server", default_server, required=True)
-            days = prompt_int("Days back to search", default_days, minimum=1)
-            sender = prompt_with_default("Sender filter (optional)", default_sender or "")
-            dry_run = prompt_yes_no("Dry run (preview only)", default=True)
-            master_file = prompt_with_default("Master workbook path", default_master, required=not dry_run)
-
-            if not run_preflight(
-                master_file=master_file,
-                require_workbook=not dry_run,
-                check_fetch=True,
-                email=email,
-                days=days,
-                server=server,
-                sender=sender,
-                verbose=True,
-            ):
-                if not prompt_yes_no("Preflight failed. Continue anyway", default=False):
-                    continue
-
-            try:
-                print(f"Connecting to Outlook as {email}...")
-                account = connect_outlook(email, server=server)
-                pdfs = fetch_bcecn_pdfs(account, sender_filter=sender or None, days_back=days)
-            except Exception as exc:
-                print(f"Fetch failed: {exc}")
-                continue
-
-            if not pdfs:
-                print("No PDFs downloaded.")
-                continue
-
-            process_many_pdfs(pdfs, master_file, dry_run=dry_run)
-            continue
-
-        if choice == "4":
-            check_fetch = prompt_yes_no("Include Outlook fetch checks", default=False)
             dry_run = prompt_yes_no("Assume dry-run mode (skip workbook validation)", default=False)
             master_file = prompt_with_default("Master workbook path", default_master, required=not dry_run)
-
-            email = default_email if check_fetch else None
-            days = default_days if check_fetch else None
-            server = default_server if check_fetch else None
-            sender = default_sender if check_fetch else None
 
             run_preflight(
                 master_file=master_file,
                 require_workbook=not dry_run,
-                check_fetch=check_fetch,
-                email=email,
-                days=days,
-                server=server,
-                sender=sender,
                 verbose=True,
             )
             continue
 
-        print("Invalid selection. Please choose 1-5.")
+        print("Invalid selection. Please choose 1-4.")
 
 
 def main():
     load_env_file(".env")
 
     default_master = os.environ.get("MASTER_FILE", MASTER_FILE)
-    default_email = os.environ.get("OUTLOOK_EMAIL", "etienne.beaumier@bell.ca")
-    default_days = env_int("OUTLOOK_DAYS", 7)
-    default_server = os.environ.get("OUTLOOK_SERVER", "outlook.office365.com")
-    default_sender = os.environ.get("BCECN_SENDER")
 
     parser = argparse.ArgumentParser(description="BCECN Yield Spread Automater")
     parser.add_argument("--pdf", help="Path to a single PDF file to process")
     parser.add_argument("--dir", help="Directory containing PDF files to process")
     parser.add_argument("--master", default=default_master, help="Path to Master File.xlsx")
-    parser.add_argument("--fetch", action="store_true", help="Fetch PDFs from Outlook")
-    parser.add_argument("--email", default=default_email, help="Outlook email")
-    parser.add_argument("--days", type=int, default=default_days, help="Days back to search emails")
-    parser.add_argument(
-        "--server",
-        default=default_server,
-        help="Outlook Exchange server",
-    )
-    parser.add_argument(
-        "--sender",
-        default=default_sender,
-        help="Optional sender email filter for BCECN messages",
-    )
     parser.add_argument("--dry-run", action="store_true", help="Parse and preview data without writing to Excel")
     parser.add_argument("--check", action="store_true", help="Run preflight checks before processing")
     parser.add_argument("--interactive", action="store_true", help="Launch interactive mode menu")
     args = parser.parse_args()
 
-    operation_requested = bool(args.fetch or args.pdf or args.dir)
+    operation_requested = bool(args.pdf or args.dir)
 
     if args.interactive or (not operation_requested and not args.check):
-        interactive_mode(
-            default_master=default_master,
-            default_email=default_email,
-            default_days=default_days,
-            default_server=default_server,
-            default_sender=default_sender,
-        )
+        interactive_mode(default_master=default_master)
         return
 
     if args.check:
         preflight_ok = run_preflight(
             master_file=args.master,
             require_workbook=not args.dry_run,
-            check_fetch=args.fetch,
-            email=args.email if args.fetch else None,
-            days=args.days if args.fetch else None,
-            server=args.server if args.fetch else None,
-            sender=args.sender if args.fetch else None,
             verbose=True,
         )
         if not preflight_ok:
@@ -569,29 +430,13 @@ def main():
         preflight_ok = run_preflight(
             master_file=args.master,
             require_workbook=not args.dry_run,
-            check_fetch=args.fetch,
-            email=args.email if args.fetch else None,
-            days=args.days if args.fetch else None,
-            server=args.server if args.fetch else None,
-            sender=args.sender if args.fetch else None,
             verbose=False,
         )
         if not preflight_ok:
             print("Run with --check for full diagnostics.")
             sys.exit(1)
 
-    if args.fetch:
-        from email_fetcher import connect_outlook, fetch_bcecn_pdfs
-
-        print(f"Connecting to Outlook as {args.email}...")
-        account = connect_outlook(args.email, server=args.server)
-        pdfs = fetch_bcecn_pdfs(account, sender_filter=args.sender, days_back=args.days)
-        if not pdfs:
-            return
-        if not process_many_pdfs(pdfs, args.master, dry_run=args.dry_run):
-            sys.exit(1)
-
-    elif args.pdf:
+    if args.pdf:
         if not process_many_pdfs([args.pdf], args.master, dry_run=args.dry_run):
             sys.exit(1)
 
@@ -612,13 +457,7 @@ def main():
             sys.exit(1)
 
     else:
-        interactive_mode(
-            default_master=default_master,
-            default_email=default_email,
-            default_days=default_days,
-            default_server=default_server,
-            default_sender=default_sender,
-        )
+        interactive_mode(default_master=default_master)
 
 
 if __name__ == "__main__":
