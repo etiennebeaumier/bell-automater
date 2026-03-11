@@ -315,15 +315,18 @@ def _build_standard_curve_chart(ws, ws_data, rows, cfg, tenors, center):
 
     chart = LineChart()
     chart.title = cfg["title"]
+    chart.title.overlay = False
     chart.width = 24.0
     chart.height = 14.0
     chart.style = 2
 
     chart.x_axis.title = "Tenor"
+    chart.x_axis.title.overlay = False
     chart.x_axis.tickLblPos = "low"
     chart.x_axis.delete = False
 
     chart.y_axis.title = cfg["y_label"]
+    chart.y_axis.title.overlay = False
     chart.y_axis.delete = False
     chart.y_axis.numFmt = "0.00%" if cfg["is_pct"] else "0"
 
@@ -442,15 +445,18 @@ def _build_average_spread_time_series_chart(ws, weekly_points, cfg, year_start, 
 
     chart = LineChart()
     chart.title = f"{cfg['title_prefix']} ({year_start}-{year_end})"
+    chart.title.overlay = False
     chart.width = 24.0
     chart.height = 14.0
     chart.style = 2
 
     chart.x_axis.title = "Week Start (Monday)"
+    chart.x_axis.title.overlay = False
     chart.x_axis.tickLblPos = "low"
     chart.x_axis.delete = False
 
     chart.y_axis.title = "Spread (bps)"
+    chart.y_axis.title.overlay = False
     chart.y_axis.delete = False
     chart.y_axis.numFmt = "0"
 
