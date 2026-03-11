@@ -3,6 +3,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import PatternFill
 
 import excel_writer
 
@@ -249,22 +250,27 @@ class DeduplicatePricingRowsTests(unittest.TestCase):
                 ],
             )
 
-    def test_non_duplicate_rows_remain_unchanged(self):
+    def test_non_duplicate_rows_are_sorted_by_bank_then_date(self):
         with TemporaryDirectory() as temp_dir:
             workbook_path = f"{temp_dir}/master.xlsx"
             rows = [
-                {"date": date(2024, 1, 2), "bank": "BankA", "spread": 100},
-                {"date": date(2024, 1, 3), "bank": "BankA", "spread": 110},
                 {"date": date(2024, 1, 2), "bank": "BankB", "spread": 90},
+                {"date": date(2024, 1, 3), "bank": "BankA", "spread": 110},
+                {"date": date(2024, 1, 2), "bank": "BankA", "spread": 100},
             ]
             self._create_workbook(workbook_path, rows=rows)
 
-            before = self._read_pricing_rows(workbook_path)
             removed = excel_writer.deduplicate_pricing_rows(workbook_path)
-            after = self._read_pricing_rows(workbook_path)
 
             self.assertEqual(removed, 0)
-            self.assertEqual(after, before)
+            self.assertEqual(
+                self._read_pricing_rows(workbook_path),
+                [
+                    (date(2024, 1, 2), "BankA", 100),
+                    (date(2024, 1, 3), "BankA", 110),
+                    (date(2024, 1, 2), "BankB", 90),
+                ],
+            )
 
     def test_rows_missing_date_or_bank_are_untouched(self):
         with TemporaryDirectory() as temp_dir:
@@ -289,6 +295,64 @@ class DeduplicatePricingRowsTests(unittest.TestCase):
                     (date(2024, 1, 4), None, 11),
                 ],
             )
+
+    def test_rows_missing_date_or_bank_move_to_bottom_in_original_order(self):
+        with TemporaryDirectory() as temp_dir:
+            workbook_path = f"{temp_dir}/master.xlsx"
+            self._create_workbook(
+                workbook_path,
+                rows=[
+                    {"date": None, "bank": "NoDate", "spread": 10},
+                    {"date": date(2024, 1, 2), "bank": "BankB", "spread": 90},
+                    {"date": date(2024, 1, 2), "bank": "BankA", "spread": 100},
+                    {"date": date(2024, 1, 4), "bank": None, "spread": 11},
+                ],
+            )
+
+            removed = excel_writer.deduplicate_pricing_rows(workbook_path)
+            self.assertEqual(removed, 0)
+            self.assertEqual(
+                self._read_pricing_rows(workbook_path),
+                [
+                    (date(2024, 1, 2), "BankA", 100),
+                    (date(2024, 1, 2), "BankB", 90),
+                    (None, "NoDate", 10),
+                    (date(2024, 1, 4), None, 11),
+                ],
+            )
+
+    def test_reorder_preserves_cell_style_metadata(self):
+        with TemporaryDirectory() as temp_dir:
+            workbook_path = f"{temp_dir}/master.xlsx"
+            self._create_workbook(
+                workbook_path,
+                rows=[
+                    {"date": date(2024, 1, 2), "bank": "BankB", "spread": 90},
+                    {"date": date(2024, 1, 2), "bank": "BankA", "spread": 100},
+                ],
+            )
+
+            wb = load_workbook(workbook_path)
+            ws = wb["Pricing"]
+            ws.cell(row=2, column=3).fill = PatternFill(fill_type="solid", fgColor="00FF0000")
+            ws.cell(row=2, column=3).number_format = "0.000"
+            ws.cell(row=3, column=3).fill = PatternFill(fill_type="solid", fgColor="0000FF00")
+            ws.cell(row=3, column=3).number_format = "0.00"
+            wb.save(workbook_path)
+
+            removed = excel_writer.deduplicate_pricing_rows(workbook_path)
+            self.assertEqual(removed, 0)
+
+            wb = load_workbook(workbook_path)
+            ws = wb["Pricing"]
+
+            self.assertEqual(ws.cell(row=2, column=2).value, "BankA")
+            self.assertEqual(ws.cell(row=2, column=3).fill.fgColor.rgb, "0000FF00")
+            self.assertEqual(ws.cell(row=2, column=3).number_format, "0.00")
+
+            self.assertEqual(ws.cell(row=3, column=2).value, "BankB")
+            self.assertEqual(ws.cell(row=3, column=3).fill.fgColor.rgb, "00FF0000")
+            self.assertEqual(ws.cell(row=3, column=3).number_format, "0.000")
 
 
 if __name__ == "__main__":

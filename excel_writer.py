@@ -1,5 +1,6 @@
 """Write parsed PDF data into the Master File Excel workbook."""
 
+from copy import copy
 from datetime import date, datetime, timedelta
 from openpyxl import load_workbook
 from openpyxl.chart import LineChart, Reference
@@ -154,39 +155,101 @@ def _dedupe_rows_by_date_bank(rows):
     return list(reversed(deduped_reverse))
 
 
-def deduplicate_pricing_rows(master_file_path: str) -> int:
-    """Remove duplicate Pricing rows by (date, bank), keeping the newest row.
+def _snapshot_cell_payload(cell):
+    return {
+        "value": cell.value,
+        "style": copy(cell._style),
+        "comment": copy(cell.comment),
+        "hyperlink": copy(cell.hyperlink),
+    }
 
-    Rows missing either date or bank are ignored and left untouched.
-    Returns the number of deleted rows.
+
+def _restore_cell_payload(cell, payload):
+    cell.value = payload["value"]
+    cell._style = copy(payload["style"])
+    cell.comment = copy(payload["comment"])
+    cell.hyperlink = copy(payload["hyperlink"])
+
+
+def _collect_pricing_row_payloads(ws_data):
+    max_col = ws_data.max_column
+    rows = []
+    for r in range(2, ws_data.max_row + 1):
+        cells = [_snapshot_cell_payload(ws_data.cell(row=r, column=c)) for c in range(1, max_col + 1)]
+        date_val = _normalize_date(cells[0]["value"]) if cells else None
+        bank_val = _normalize_bank(cells[1]["value"]) if len(cells) > 1 else None
+        key = (date_val, bank_val.casefold()) if date_val and bank_val else None
+        rows.append(
+            {
+                "row": r,
+                "date": date_val,
+                "bank": bank_val,
+                "dedup_key": key,
+                "cells": cells,
+            }
+        )
+    return rows
+
+
+def _dedupe_pricing_row_payloads(rows):
+    seen = set()
+    deduped_reverse = []
+    removed = 0
+
+    for row in reversed(rows):
+        key = row["dedup_key"]
+        if key is None:
+            deduped_reverse.append(row)
+            continue
+        if key in seen:
+            removed += 1
+            continue
+        seen.add(key)
+        deduped_reverse.append(row)
+
+    return list(reversed(deduped_reverse)), removed
+
+
+def _sort_pricing_row_payloads(rows):
+    valid_rows = [row for row in rows if row["dedup_key"] is not None]
+    invalid_rows = [row for row in rows if row["dedup_key"] is None]
+    sorted_valid = sorted(valid_rows, key=lambda row: (row["bank"].casefold(), row["date"], row["row"]))
+    return sorted_valid + invalid_rows
+
+
+def _rewrite_pricing_rows(ws_data, rows):
+    existing_rows = ws_data.max_row - 1
+    if existing_rows > 0:
+        ws_data.delete_rows(2, existing_rows)
+
+    for target_row, row_payload in enumerate(rows, start=2):
+        for col, cell_payload in enumerate(row_payload["cells"], start=1):
+            cell = ws_data.cell(row=target_row, column=col)
+            _restore_cell_payload(cell, cell_payload)
+
+
+def deduplicate_pricing_rows(master_file_path: str) -> int:
+    """Deduplicate and reorder Pricing rows.
+
+    1) Remove duplicate rows by (date, bank case-insensitive), keeping newest.
+    2) Order valid rows by bank (case-insensitive), then by date ascending.
+    3) Keep rows with missing date or bank at the bottom in original order.
+
+    Returns the number of duplicates removed.
     """
     wb = load_workbook(master_file_path, keep_vba=_is_macro_enabled(master_file_path))
     ws_data = wb["Pricing"]
 
-    latest_row_by_key = {}
-    row_key_by_index = {}
+    all_rows = _collect_pricing_row_payloads(ws_data)
+    deduped_rows, removed = _dedupe_pricing_row_payloads(all_rows)
+    sorted_rows = _sort_pricing_row_payloads(deduped_rows)
+    order_changed = [row["row"] for row in sorted_rows] != [row["row"] for row in deduped_rows]
 
-    for r in range(2, ws_data.max_row + 1):
-        date_val = _normalize_date(ws_data.cell(row=r, column=1).value)
-        bank_val = _normalize_bank(ws_data.cell(row=r, column=2).value)
-        if not date_val or not bank_val:
-            continue
-        key = (date_val, bank_val.casefold())
-        row_key_by_index[r] = key
-        latest_row_by_key[key] = r
-
-    rows_to_delete = [
-        row_index
-        for row_index, key in row_key_by_index.items()
-        if latest_row_by_key[key] != row_index
-    ]
-    for row_index in sorted(rows_to_delete, reverse=True):
-        ws_data.delete_rows(row_index, 1)
-
-    if rows_to_delete:
+    if removed or order_changed:
+        _rewrite_pricing_rows(ws_data, sorted_rows)
         wb.save(master_file_path)
 
-    return len(rows_to_delete)
+    return removed
 
 
 def _latest_per_bank(rows):

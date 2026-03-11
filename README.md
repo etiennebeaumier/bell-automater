@@ -11,7 +11,7 @@ It runs as a standalone desktop application (no Python installation required) or
 - Extracts CAD and USD spreads and yields for 3Y, 5Y, 7Y, 10Y, and 30Y tenors
 - Extracts CAD and USD NC5 and NC10 spread/coupon fields when present
 - Appends one row per PDF into the `Pricing` sheet during processing
-- Runs end-of-run post-processing (non-dry-run only): removes duplicate `Pricing` rows by `(date, bank)` case-insensitively (keep newest), then rebuilds six charts once in `Summary Charts`
+- Runs end-of-run post-processing (non-dry-run only): removes duplicate `Pricing` rows by `(date, bank)` case-insensitively (keep newest), reorders rows by bank/date, then rebuilds six charts once in `Summary Charts`
 - Optionally fetches matching BCECN PDF attachments from Outlook / Exchange Online
 - Supports dry-run mode to preview parsed data without writing
 
@@ -196,14 +196,15 @@ python3 main.py
 - Column A: date
 - Column B: bank name
 - Columns C through AD: parsed CAD and USD spreads, yields, and NC values
-- For non-dry-run runs, duplicate `Pricing` rows are removed once at end-of-run, then six charts are rebuilt once
+- For non-dry-run runs, duplicate `Pricing` rows are removed once at end-of-run, valid rows are sorted by bank/date, then six charts are rebuilt once
 
 ### Duplicate Handling
 
 - Duplicate key: `(Date, Bank)` with bank matched case-insensitively
-- Keep policy: newest row in workbook order is preserved
+- Keep policy: newest row in workbook order is preserved per duplicate key
+- Post-dedupe ordering: valid rows are sorted by bank (case-insensitive) then date (earliest to latest)
 - Scope: Python desktop and CLI workflows
-- Rows with missing date or bank are not part of deduplication and are left untouched
+- Rows with missing date or bank are not part of deduplication and are appended after valid rows in their original relative order
 
 ### Summary Charts Outputs
 
