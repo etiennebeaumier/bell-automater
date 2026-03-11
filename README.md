@@ -4,8 +4,6 @@ Bell Automater parses BCECN new-issue pricing PDFs, writes the extracted values 
 
 It runs as a standalone desktop application (no Python installation required) or from the command line.
 
-The repository also includes Power Automate, Azure Function, and Office Script assets for a cloud-hosted version of the same workflow.
-
 ## What the Tool Does
 
 - Detects the sending bank from the PDF filename or first-page content
@@ -78,9 +76,6 @@ excel_writer.py                        Workbook append, dedupe, and chart genera
 parsers/                               Bank-specific PDF parsers
 build_mac.sh                           macOS build script
 build_win.bat                          Windows build script
-power_automate/flow_design.md          Power Automate flow design
-power_automate/azure_function/         Azure Function parser endpoint
-power_automate/office_script/          Office Script for Excel Online
 requirements.txt                       Python dependencies
 ```
 
@@ -239,17 +234,6 @@ Weekly average chart behavior:
 - BMO
 
 Bank detection works by filename hints first, then first-page PDF text. If detection fails, include the bank name in the filename.
-
-## Power Automate and Azure Assets
-
-The `power_automate/` folder contains a cloud-hosted variant of the workflow:
-
-- `flow_design.md`: step-by-step Power Automate design
-- `azure_function/`: HTTP endpoint that parses incoming PDF payloads
-- `office_script/`: Excel Online script that appends rows and rebuilds charts
-
-Use this path when the process should run automatically on mailbox arrival rather than from a local machine.
-Note: the end-of-run Pricing deduplication described above applies to the local Python app/CLI path.
 
 ## Troubleshooting
 
