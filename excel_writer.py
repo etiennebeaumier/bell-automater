@@ -1,6 +1,6 @@
 """Write parsed PDF data into the Master File Excel workbook."""
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from openpyxl import load_workbook
 from openpyxl.chart import LineChart, Reference
 from openpyxl.chart.series import SeriesLabel
@@ -90,13 +90,317 @@ def append_row(master_file_path: str, data: dict):
     return wb
 
 
-def update_charts(master_file_path: str):
-    """Create/update yield curve charts on the Summary Charts sheet.
+def _normalize_date(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
+        try:
+            return datetime.fromisoformat(raw).date()
+        except ValueError:
+            return None
+    return None
 
-    Standard finance yield curve format:
-    - X axis: Tenor (3Y, 5Y, 7Y, 10Y, 30Y)
-    - Y axis: Spread (bps) or Yield (%)
-    - One line per bank/date combination
+
+def _normalize_bank(value):
+    if value is None:
+        return None
+    bank = str(value).strip()
+    return bank or None
+
+
+def _numeric_value(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _collect_pricing_rows(ws_data):
+    rows = []
+    for r in range(2, ws_data.max_row + 1):
+        date_val = _normalize_date(ws_data.cell(row=r, column=1).value)
+        bank_val = _normalize_bank(ws_data.cell(row=r, column=2).value)
+        if not date_val or not bank_val:
+            continue
+        rows.append({"row": r, "date": date_val, "bank": bank_val})
+    return rows
+
+
+def _dedupe_rows_by_date_bank(rows):
+    seen = set()
+    deduped = []
+    for row in rows:
+        key = (row["date"], row["bank"].casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    return deduped
+
+
+def _latest_per_bank(rows):
+    latest = {}
+    for row in rows:
+        key = row["bank"].casefold()
+        existing = latest.get(key)
+        if not existing or row["date"] > existing["date"]:
+            latest[key] = row
+    return sorted(latest.values(), key=lambda item: (item["date"], item["bank"].casefold()))
+
+
+def _coerce_year(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_year_range(rows, avg_start_year=None, avg_end_year=None):
+    """Resolve an inclusive year window for average spread charts.
+
+    The UI passes `avg_start_year` / `avg_end_year` as optional values.
+    Missing values default to the min/max year present in `rows` (or current
+    year when no rows are available). If bounds are reversed, they are swapped.
+    """
+    years = sorted({row["date"].year for row in rows})
+    current_year = datetime.now().year
+
+    if years:
+        start = _coerce_year(avg_start_year)
+        end = _coerce_year(avg_end_year)
+        if start is None:
+            start = years[0]
+        if end is None:
+            end = years[-1]
+    else:
+        start = _coerce_year(avg_start_year) or current_year
+        end = _coerce_year(avg_end_year) or current_year
+
+    if start > end:
+        start, end = end, start
+    return start, end
+
+
+def _build_standard_curve_chart(ws, ws_data, rows, cfg, tenors, center):
+    sr = cfg["table_start_row"]
+    sc = cfg["table_start_col"]
+
+    ws.cell(row=sr, column=sc, value="Bank").alignment = center
+    for j, tenor in enumerate(tenors):
+        ws.cell(row=sr, column=sc + 1 + j, value=tenor).alignment = center
+
+    for i, row_info in enumerate(rows):
+        label = f"{row_info['bank']} ({row_info['date'].strftime('%Y-%m-%d')})"
+        ws.cell(row=sr + 1 + i, column=sc, value=label).alignment = center
+        for j, pricing_col in enumerate(cfg["cols"]):
+            value = ws_data.cell(row=row_info["row"], column=pricing_col).value
+            cell = ws.cell(row=sr + 1 + i, column=sc + 1 + j, value=value)
+            cell.alignment = center
+            if cfg["is_pct"] and value is not None:
+                cell.number_format = "0.00%"
+
+    chart = LineChart()
+    chart.title = cfg["title"]
+    chart.width = 24.0
+    chart.height = 14.0
+    chart.style = 2
+
+    chart.x_axis.title = "Tenor"
+    chart.x_axis.tickLblPos = "low"
+    chart.x_axis.delete = False
+
+    chart.y_axis.title = cfg["y_label"]
+    chart.y_axis.delete = False
+    chart.y_axis.numFmt = "0.00%" if cfg["is_pct"] else "0"
+
+    y_values = []
+    for row_info in rows:
+        for pricing_col in cfg["cols"]:
+            value = _numeric_value(ws_data.cell(row=row_info["row"], column=pricing_col).value)
+            if value is not None:
+                y_values.append(value)
+
+    if y_values:
+        y_min = min(y_values)
+        y_max = max(y_values)
+        span = max(y_max - y_min, 1e-9)
+        major = _major_unit(span, cfg["is_pct"])
+        chart.y_axis.majorUnit = major
+        chart.y_axis.minorUnit = major / 5
+        chart.y_axis.scaling.min = max(0.0, y_min - major)
+        chart.y_axis.scaling.max = y_max + major
+
+    categories = Reference(ws, min_col=sc + 1, max_col=sc + len(tenors), min_row=sr)
+    for i in range(len(rows)):
+        values = Reference(ws, min_col=sc + 1, max_col=sc + len(tenors), min_row=sr + 1 + i)
+        chart.add_data(values, from_rows=True, titles_from_data=False)
+        series = chart.series[-1]
+        series.tx = SeriesLabel(v=ws.cell(row=sr + 1 + i, column=sc).value)
+        series.smooth = False
+        series.graphicalProperties.line.width = 22000
+        series.marker.symbol = "circle"
+        series.marker.size = 7
+
+    chart.set_categories(categories)
+    chart.legend.position = "r"
+    chart.legend.overlay = False
+    ws.add_chart(chart, cfg["chart_anchor"])
+
+
+def _iso_week_start(value_date):
+    """Return the Monday date for `value_date`'s ISO week."""
+    return value_date - timedelta(days=value_date.isoweekday() - 1)
+
+
+def _aggregate_weekly_average_spreads(ws_data, rows, spread_cols):
+    """Aggregate spread columns into weekly equal-bank-weight averages.
+
+    For each ISO week and tenor column:
+    1. Collect all numeric observations per bank within the week.
+    2. Compute each bank's mean for that tenor/week.
+    3. Compute the simple average across banks.
+
+    Weeks where all requested tenors are missing are excluded.
+    """
+    weekly_values = {}
+    for row in rows:
+        week_start = _iso_week_start(row["date"])
+        per_week = weekly_values.setdefault(week_start, {})
+        bank_key = row["bank"].casefold()
+        per_bank = per_week.setdefault(bank_key, {})
+
+        for col in spread_cols:
+            value = _numeric_value(ws_data.cell(row=row["row"], column=col).value)
+            if value is None:
+                continue
+            per_bank.setdefault(col, []).append(value)
+
+    weekly_points = []
+    for week_start in sorted(weekly_values):
+        per_week = weekly_values[week_start]
+        tenor_values = []
+        has_any_value = False
+
+        for col in spread_cols:
+            bank_means = []
+            for per_bank in per_week.values():
+                values = per_bank.get(col, [])
+                if values:
+                    bank_means.append(sum(values) / len(values))
+
+            if bank_means:
+                tenor_mean = sum(bank_means) / len(bank_means)
+                has_any_value = True
+            else:
+                tenor_mean = None
+            tenor_values.append(tenor_mean)
+
+        if has_any_value:
+            weekly_points.append({"week_start": week_start, "values": tenor_values})
+
+    return weekly_points
+
+
+def _build_average_spread_time_series_chart(ws, weekly_points, cfg, year_start, year_end, center):
+    """Render one weekly average spread time-series chart and backing table."""
+    sr = cfg["table_start_row"]
+    sc = cfg["table_start_col"]
+    tenors = cfg["tenors"]
+
+    ws.cell(row=sr, column=sc, value="Week Start").alignment = center
+    for j, tenor in enumerate(tenors):
+        ws.cell(row=sr, column=sc + 1 + j, value=tenor).alignment = center
+
+    for i, point in enumerate(weekly_points, start=1):
+        date_cell = ws.cell(row=sr + i, column=sc, value=point["week_start"])
+        date_cell.number_format = "YYYY-MM-DD"
+        date_cell.alignment = center
+        for j, value in enumerate(point["values"]):
+            ws.cell(row=sr + i, column=sc + 1 + j, value=value).alignment = center
+
+    if weekly_points:
+        data_end_row = sr + len(weekly_points)
+    else:
+        data_end_row = sr + 1
+        ws.cell(row=data_end_row, column=sc, value=None).alignment = center
+        for j in range(len(tenors)):
+            ws.cell(row=data_end_row, column=sc + 1 + j, value=None).alignment = center
+
+    chart = LineChart()
+    chart.title = f"{cfg['title_prefix']} ({year_start}-{year_end})"
+    chart.width = 24.0
+    chart.height = 14.0
+    chart.style = 2
+
+    chart.x_axis.title = "Week Start (Monday)"
+    chart.x_axis.tickLblPos = "low"
+    chart.x_axis.delete = False
+
+    chart.y_axis.title = "Spread (bps)"
+    chart.y_axis.delete = False
+    chart.y_axis.numFmt = "0"
+
+    y_values = [value for point in weekly_points for value in point["values"] if value is not None]
+    if y_values:
+        y_min = min(y_values)
+        y_max = max(y_values)
+        span = max(y_max - y_min, 1e-9)
+        major = _major_unit(span, is_pct=False)
+        chart.y_axis.majorUnit = major
+        chart.y_axis.minorUnit = major / 5
+        chart.y_axis.scaling.min = max(0.0, y_min - major)
+        chart.y_axis.scaling.max = y_max + major
+
+    categories = Reference(ws, min_col=sc, max_col=sc, min_row=sr + 1, max_row=data_end_row)
+    for j, tenor in enumerate(tenors):
+        values = Reference(
+            ws,
+            min_col=sc + 1 + j,
+            max_col=sc + 1 + j,
+            min_row=sr + 1,
+            max_row=data_end_row,
+        )
+        chart.add_data(values, from_rows=False, titles_from_data=False)
+        series = chart.series[-1]
+        series.tx = SeriesLabel(v=tenor)
+        series.smooth = False
+        series.graphicalProperties.line.width = 22000
+        series.marker.symbol = "circle"
+        series.marker.size = 6
+
+    chart.set_categories(categories)
+    chart.legend.position = "r"
+    chart.legend.overlay = False
+    ws.add_chart(chart, cfg["chart_anchor"])
+
+
+def update_charts(master_file_path: str, avg_start_year=None, avg_end_year=None):
+    """Create/update all Summary Charts outputs (6 charts total).
+
+    Core charts (unchanged behavior):
+    - CAD spread curve
+    - CAD yield curve
+    - USD spread curve
+    - USD yield curve
+    Each core chart uses the most recent available row per bank.
+
+    Average charts (weekly time-series):
+    - CAD Average Spread Through Time
+    - USD Average Spread Through Time
+    Each average chart plots ISO-week (Monday) categories and 4 tenor series
+    (3Y, 5Y, 10Y, 30Y), bounded by the inclusive `avg_start_year` /
+    `avg_end_year` filter.
     """
     wb = load_workbook(master_file_path, keep_vba=_is_macro_enabled(master_file_path))
     ws_data = wb["Pricing"]
@@ -108,28 +412,9 @@ def update_charts(master_file_path: str):
             cell.value = None
     ws._charts = []
 
-    # Collect data rows from Pricing (only contiguous rows starting from row 2)
-    all_rows = []
-    for r in range(2, ws_data.max_row + 1):
-        date_val = ws_data.cell(row=r, column=1).value
-        bank_val = ws_data.cell(row=r, column=2).value
-        if date_val and bank_val:
-            all_rows.append(r)
-        else:
-            break  # stop at first empty row to skip stray data
-
-    # Keep only the most recent row per bank
-    latest_per_bank = {}
-    for r in all_rows:
-        date_val = ws_data.cell(row=r, column=1).value
-        bank_val = ws_data.cell(row=r, column=2).value
-        if bank_val not in latest_per_bank or date_val > latest_per_bank[bank_val][1]:
-            latest_per_bank[bank_val] = (r, date_val)
-    rows = [v[0] for v in sorted(latest_per_bank.values(), key=lambda x: x[1])]
-
-    if not rows:
-        wb.save(master_file_path)
-        return
+    all_rows = _collect_pricing_rows(ws_data)
+    deduped_rows = _dedupe_rows_by_date_bank(all_rows)
+    rows = _latest_per_bank(deduped_rows)
 
     tenors = ["3Y", "5Y", "7Y", "10Y", "30Y"]
 
@@ -174,94 +459,48 @@ def update_charts(master_file_path: str):
         },
     ]
 
+    avg_tenors = ["3Y", "5Y", "10Y", "30Y"]
+    avg_chart_configs = [
+        {
+            "title_prefix": "Bell Canada - CAD Average Spread Through Time",
+            "spread_cols": [3, 5, 9, 11],
+            "tenors": avg_tenors,
+            "chart_anchor": "A65",
+            "table_start_row": 200,
+            "table_start_col": 1,
+        },
+        {
+            "title_prefix": "Bell Canada - USD Average Spread Through Time",
+            "spread_cols": [13, 15, 19, 21],
+            "tenors": avg_tenors,
+            "chart_anchor": "Q65",
+            "table_start_row": 200,
+            "table_start_col": 10,
+        },
+    ]
+
     center = Alignment(horizontal="center", vertical="center")
 
     for cfg in chart_configs:
-        sr = cfg["table_start_row"]
-        sc = cfg["table_start_col"]
+        _build_standard_curve_chart(ws, ws_data, rows, cfg, tenors, center)
 
-        # Write tenor headers: row sr, cols sc+1 .. sc+5
-        ws.cell(row=sr, column=sc, value="Bank").alignment = center
-        for j, tenor in enumerate(tenors):
-            ws.cell(row=sr, column=sc + 1 + j, value=tenor).alignment = center
+    year_start, year_end = _resolve_year_range(
+        deduped_rows,
+        avg_start_year=avg_start_year,
+        avg_end_year=avg_end_year,
+    )
+    average_rows = [row for row in deduped_rows if year_start <= row["date"].year <= year_end]
 
-        # Write one row per bank/date
-        for i, data_row in enumerate(rows):
-            date_val = ws_data.cell(row=data_row, column=1).value
-            bank_val = ws_data.cell(row=data_row, column=2).value
-            if isinstance(date_val, datetime):
-                label = f"{bank_val} ({date_val.strftime('%Y-%m-%d')})"
-            else:
-                label = f"{bank_val}"
-
-            ws.cell(row=sr + 1 + i, column=sc, value=label).alignment = center
-            for j, pricing_col in enumerate(cfg["cols"]):
-                val = ws_data.cell(row=data_row, column=pricing_col).value
-                cell = ws.cell(row=sr + 1 + i, column=sc + 1 + j, value=val)
-                cell.alignment = center
-                if cfg["is_pct"] and val is not None:
-                    cell.number_format = "0.00%"
-
-        num_series = len(rows)
-
-        # Build the chart
-        chart = LineChart()
-        chart.title = cfg["title"]
-        chart.width = 24.0
-        chart.height = 14.0
-        chart.style = 2
-
-        # X axis = Tenor
-        chart.x_axis.title = "Tenor"
-        chart.x_axis.tickLblPos = "low"
-        chart.x_axis.delete = False
-
-        # Y axis
-        chart.y_axis.title = cfg["y_label"]
-        chart.y_axis.delete = False
-        chart.y_axis.numFmt = "0.00%" if cfg["is_pct"] else "0"
-        # Set a finance-friendly y-axis scale with tighter grid spacing.
-        y_values = []
-        for data_row in rows:
-            for pricing_col in cfg["cols"]:
-                val = ws_data.cell(row=data_row, column=pricing_col).value
-                if isinstance(val, (int, float)):
-                    y_values.append(float(val))
-
-        if y_values:
-            y_min = min(y_values)
-            y_max = max(y_values)
-            span = max(y_max - y_min, 1e-9)
-            major = _major_unit(span, cfg["is_pct"])
-            chart.y_axis.majorUnit = major
-            chart.y_axis.minorUnit = major / 5
-
-            lower = max(0.0, y_min - major)
-            upper = y_max + major
-            chart.y_axis.scaling.min = lower
-            chart.y_axis.scaling.max = upper
-
-        # Categories = tenor labels
-        categories = Reference(ws, min_col=sc + 1, max_col=sc + 5, min_row=sr)
-
-        # One series per bank/date row
-        for i in range(num_series):
-            values = Reference(ws, min_col=sc + 1, max_col=sc + 5, min_row=sr + 1 + i)
-            chart.add_data(values, from_rows=True, titles_from_data=False)
-            series = chart.series[-1]
-            series.tx = SeriesLabel(v=ws.cell(row=sr + 1 + i, column=sc).value)
-            series.smooth = False
-            series.graphicalProperties.line.width = 22000  # ~1.75pt
-            series.marker.symbol = "circle"
-            series.marker.size = 7
-
-        chart.set_categories(categories)
-
-        # Put legend on the right for clearer bank/date labels.
-        chart.legend.position = "r"
-        chart.legend.overlay = False
-
-        ws.add_chart(chart, cfg["chart_anchor"])
+    for cfg in avg_chart_configs:
+        weekly_points = _aggregate_weekly_average_spreads(ws_data, average_rows, cfg["spread_cols"])
+        _build_average_spread_time_series_chart(
+            ws,
+            weekly_points=weekly_points,
+            cfg=cfg,
+            year_start=year_start,
+            year_end=year_end,
+            center=center,
+        )
 
     wb.save(master_file_path)
-    print(f"Updated {len(chart_configs)} yield curve charts in Summary Charts tab")
+    print(f"Updated {len(chart_configs) + len(avg_chart_configs)} yield curve charts in Summary Charts tab")

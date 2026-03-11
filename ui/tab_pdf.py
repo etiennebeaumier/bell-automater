@@ -140,6 +140,8 @@ class PdfTab(ctk.CTkFrame):
             pdf_paths=self.selected_files,
             master_file=settings.master_file,
             dry_run=settings.dry_run,
+            avg_start_year=settings.avg_start_year,
+            avg_end_year=settings.avg_end_year,
             on_progress=self._on_progress,
             on_result=self._on_result,
             on_complete=self._on_complete,
@@ -154,11 +156,10 @@ class PdfTab(ctk.CTkFrame):
 
     def _on_complete(self, summary):
         self.app_window.results.log(summary)
-        self.app_window.results.log("All selected documents were processed. Closing application...")
+        self.app_window.results.log("All selected documents were processed.")
         self._is_processing = False
         self._set_processing(False)
         self.progress.grid_remove()
-        self.winfo_toplevel().after(300, self.winfo_toplevel().destroy)
 
     def _set_processing(self, active):
         state = "disabled" if active else "normal"

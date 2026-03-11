@@ -3,6 +3,7 @@
 import json
 import os
 import pathlib
+from datetime import datetime
 
 CONFIG_DIR = pathlib.Path.home() / ".bcecn_pricing"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -57,6 +58,8 @@ DEFAULTS = {
     "bcecn_sender": "",
     "appearance_mode": "dark",
     "dry_run": False,
+    "avg_start_year": datetime.now().year,
+    "avg_end_year": datetime.now().year,
 }
 
 

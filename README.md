@@ -13,7 +13,7 @@ The repository also includes Power Automate, Azure Function, and Office Script a
 - Extracts CAD and USD spreads and yields for 3Y, 5Y, 7Y, 10Y, and 30Y tenors
 - Extracts CAD and USD NC5 and NC10 spread/coupon fields when present
 - Appends one row per PDF into the `Pricing` sheet
-- Rebuilds the four curve charts in `Summary Charts`
+- Rebuilds six charts in `Summary Charts` (4 core curves + 2 weekly average spread charts)
 - Optionally fetches matching BCECN PDF attachments from Outlook / Exchange Online
 - Supports dry-run mode to preview parsed data without writing
 
@@ -28,6 +28,7 @@ The primary way to use the tool is the standalone desktop app, built with Custom
 - **Dry-run mode**: preview parsed spreads, yields, and hybrid data in the results panel without writing to the workbook
 - **Dark / Light / System theme** toggle
 - **Persistent settings**: workbook path, email, server, and preferences saved to `~/.bcecn_pricing/config.json`
+- **Average chart year controls**: `Start Year` / `End Year` dropdowns bound the weekly average spread charts
 - **Auto browser open**: during Outlook authentication, the sign-in URL opens automatically and the device code is copied to clipboard
 
 ### Running the App
@@ -129,6 +130,16 @@ python3 app.py
 
 Settings (workbook path, email, server, etc.) are configured in the GUI and persisted automatically to `~/.bcecn_pricing/config.json`.
 
+## Testing
+
+Run automated tests:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+Current test coverage includes weekly average-chart aggregation logic, year-range filtering behavior, and chart-output regressions.
+
 ## CLI Usage
 
 The CLI is still available for scripting and automation.
@@ -190,8 +201,27 @@ python3 main.py
 - Column A: date
 - Column B: bank name
 - Columns C through AD: parsed CAD and USD spreads, yields, and NC values
-- Four line charts are rebuilt on each non-dry-run write (CAD spread, CAD yield, USD spread, USD yield)
-- Charts use only the most recent row per bank
+- Six line charts are rebuilt on each non-dry-run write
+
+### Summary Charts Outputs
+
+1. Bell Canada - CAD New Issue Spread Curve (bps)
+2. Bell Canada - CAD Re-Offer Yield Curve
+3. Bell Canada - USD New Issue Spread Curve (bps)
+4. Bell Canada - USD Re-Offer Yield Curve
+5. Bell Canada - CAD Average Spread Through Time (`3Y`, `5Y`, `10Y`, `30Y`)
+6. Bell Canada - USD Average Spread Through Time (`3Y`, `5Y`, `10Y`, `30Y`)
+
+Core chart behavior:
+- Uses only the most recent row per bank.
+- X-axis is tenor (`3Y`, `5Y`, `7Y`, `10Y`, `30Y`).
+
+Weekly average chart behavior:
+- Uses deduplicated rows by `(date, bank)` with bank matched case-insensitively.
+- Applies an inclusive year filter from UI settings (`Start Year` / `End Year`), swapping bounds if selected in reverse.
+- Buckets rows by ISO week and labels categories with the Monday week-start date.
+- For each tenor and week, computes per-bank means first, then an equal-weight average across banks.
+- Drops weeks where all four tenor values are missing.
 
 ## Supported Banks
 

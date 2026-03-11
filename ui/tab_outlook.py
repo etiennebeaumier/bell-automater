@@ -128,6 +128,8 @@ class OutlookTab(ctk.CTkFrame):
             sender=self.sender_var.get().strip(),
             master_file=settings.master_file,
             dry_run=settings.dry_run,
+            avg_start_year=settings.avg_start_year,
+            avg_end_year=settings.avg_end_year,
             on_auth_status=self._on_auth_status,
             on_progress=self._on_progress,
             on_result=self._on_result,

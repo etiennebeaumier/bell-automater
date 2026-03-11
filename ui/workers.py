@@ -57,12 +57,26 @@ def _clipboard_copy(app, text):
 class PdfProcessWorker(threading.Thread):
     """Process a list of PDF files in a background thread."""
 
-    def __init__(self, app, pdf_paths, master_file, dry_run, on_progress=None, on_result=None, on_complete=None, on_error=None):
+    def __init__(
+        self,
+        app,
+        pdf_paths,
+        master_file,
+        dry_run,
+        avg_start_year=None,
+        avg_end_year=None,
+        on_progress=None,
+        on_result=None,
+        on_complete=None,
+        on_error=None,
+    ):
         super().__init__(daemon=True)
         self.app = app
         self.pdf_paths = pdf_paths
         self.master_file = master_file
         self.dry_run = dry_run
+        self.avg_start_year = avg_start_year
+        self.avg_end_year = avg_end_year
         self.on_progress = on_progress
         self.on_result = on_result
         self.on_complete = on_complete
@@ -87,7 +101,11 @@ class PdfProcessWorker(threading.Thread):
                     msg = _format_dry_run(data)
                 else:
                     append_row(self.master_file, data)
-                    update_charts(self.master_file)
+                    update_charts(
+                        self.master_file,
+                        avg_start_year=self.avg_start_year,
+                        avg_end_year=self.avg_end_year,
+                    )
                     msg = f"{data['bank']} - {date_str} - Written to workbook"
 
                 success += 1
@@ -111,6 +129,7 @@ class OutlookFetchWorker(threading.Thread):
     """Fetch PDFs from Outlook and process them in a background thread."""
 
     def __init__(self, app, email, server, days, sender, master_file, dry_run,
+                 avg_start_year=None, avg_end_year=None,
                  on_auth_status=None, on_progress=None, on_result=None, on_complete=None, on_error=None):
         super().__init__(daemon=True)
         self.app = app
@@ -120,6 +139,8 @@ class OutlookFetchWorker(threading.Thread):
         self.sender = sender
         self.master_file = master_file
         self.dry_run = dry_run
+        self.avg_start_year = avg_start_year
+        self.avg_end_year = avg_end_year
         self.on_auth_status = on_auth_status
         self.on_progress = on_progress
         self.on_result = on_result
@@ -164,7 +185,11 @@ class OutlookFetchWorker(threading.Thread):
                         msg = _format_dry_run(data)
                     else:
                         append_row(self.master_file, data)
-                        update_charts(self.master_file)
+                        update_charts(
+                            self.master_file,
+                            avg_start_year=self.avg_start_year,
+                            avg_end_year=self.avg_end_year,
+                        )
                         msg = f"{data['bank']} - {date_str} - Written to workbook"
 
                     success += 1
