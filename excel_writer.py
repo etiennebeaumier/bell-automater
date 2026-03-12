@@ -542,8 +542,8 @@ def update_charts(master_file_path: str, avg_start_year=None, avg_end_year=None)
     Average charts (weekly time-series):
     - CAD Average Spread Through Time
     - USD Average Spread Through Time
-    Each average chart plots ISO-week (Monday) categories and 4 tenor series
-    (3Y, 5Y, 10Y, 30Y), bounded by the inclusive `avg_start_year` /
+    Each average chart plots ISO-week (Monday) categories and 5 tenor series
+    (3Y, 5Y, 7Y, 10Y, 30Y), bounded by the inclusive `avg_start_year` /
     `avg_end_year` filter.
 
     Input rows are deduplicated by (date, bank case-insensitive), keeping
@@ -606,11 +606,11 @@ def update_charts(master_file_path: str, avg_start_year=None, avg_end_year=None)
         },
     ]
 
-    avg_tenors = ["3Y", "5Y", "10Y", "30Y"]
+    avg_tenors = ["3Y", "5Y", "7Y", "10Y", "30Y"]
     avg_chart_configs = [
         {
             "title_prefix": "Bell Canada - CAD Average Spread Through Time",
-            "spread_cols": [3, 5, 9, 11],
+            "spread_cols": [3, 5, 7, 9, 11],
             "tenors": avg_tenors,
             "chart_anchor": "A65",
             "table_start_row": 200,
@@ -618,7 +618,7 @@ def update_charts(master_file_path: str, avg_start_year=None, avg_end_year=None)
         },
         {
             "title_prefix": "Bell Canada - USD Average Spread Through Time",
-            "spread_cols": [13, 15, 19, 21],
+            "spread_cols": [13, 15, 17, 19, 21],
             "tenors": avg_tenors,
             "chart_anchor": "Q65",
             "table_start_row": 200,

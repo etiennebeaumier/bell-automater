@@ -218,7 +218,7 @@ Weekly average chart behavior:
 - Applies an inclusive year filter from UI settings (`Start Year` / `End Year`), swapping bounds if selected in reverse.
 - Buckets rows by ISO week and labels categories with the Monday week-start date.
 - For each tenor and week, computes per-bank means first, then an equal-weight average across banks.
-- Drops weeks where all four tenor values are missing.
+- Drops weeks where all five tenor values are missing.
 
 ## Supported Banks
 

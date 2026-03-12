@@ -47,7 +47,7 @@ def _read_weekly_table(ws, table_start_row, table_start_col):
     row = table_start_row + 1
     while True:
         week_start = ws.cell(row=row, column=table_start_col).value
-        tenor_values = [ws.cell(row=row, column=table_start_col + i).value for i in range(1, 5)]
+        tenor_values = [ws.cell(row=row, column=table_start_col + i).value for i in range(1, 6)]
         if week_start is None and all(value is None for value in tenor_values):
             break
         points.append((_to_date(week_start), tenor_values))
@@ -152,12 +152,12 @@ class UpdateChartsWeeklyAverageTests(unittest.TestCase):
             self.assertEqual([week for week, _ in usd_points], [date(2024, 1, 1), date(2024, 1, 8)])
 
             expected_cad = [
-                [319.75, 327.25, 342.25, 357.25],
-                [120.0, 130.0, 150.0, 170.0],
+                [319.75, 327.25, 334.75, 342.25, 357.25],
+                [120.0, 130.0, 140.0, 150.0, 170.0],
             ]
             expected_usd = [
-                [394.75, 402.25, 417.25, 432.25],
-                [220.0, 230.0, 250.0, 270.0],
+                [394.75, 402.25, 409.75, 417.25, 432.25],
+                [220.0, 230.0, 240.0, 250.0, 270.0],
             ]
 
             for actual_values, expected_values in zip([values for _, values in cad_points], expected_cad):
@@ -185,8 +185,8 @@ class UpdateChartsWeeklyAverageTests(unittest.TestCase):
             self.assertEqual([week for week, _ in usd_points], expected_weeks)
 
             self.assertEqual(len(ws._charts), 6)
-            self.assertEqual(len(ws._charts[4].series), 4)
-            self.assertEqual(len(ws._charts[5].series), 4)
+            self.assertEqual(len(ws._charts[4].series), 5)
+            self.assertEqual(len(ws._charts[5].series), 5)
             self.assertIsInstance(ws._charts[4].x_axis, DateAxis)
             self.assertIsInstance(ws._charts[5].x_axis, DateAxis)
             self.assertEqual(
