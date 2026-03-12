@@ -4,6 +4,7 @@ from copy import copy
 from datetime import date, datetime, timedelta
 from openpyxl import load_workbook
 from openpyxl.chart import LineChart, Reference
+from openpyxl.chart.axis import DateAxis
 from openpyxl.chart.series import SeriesLabel
 from openpyxl.styles import Alignment
 
@@ -32,6 +33,8 @@ COLUMN_MAP = {
     29: "usd_nc10_spread", 30: "usd_nc10_coupon",
 }
 
+TIME_SERIES_AXIS_DATE_FORMAT = "yyyy-mm-dd"
+
 
 def _major_unit(span: float, is_pct: bool) -> float:
     """Choose a readable y-axis major unit based on data range."""
@@ -50,6 +53,7 @@ def _major_unit(span: float, is_pct: bool) -> float:
 
 
 def _is_macro_enabled(path: str) -> bool:
+    """Return True when the workbook extension indicates VBA content."""
     return path.lower().endswith(".xlsm")
 
 
@@ -92,6 +96,7 @@ def append_row(master_file_path: str, data: dict):
 
 
 def _normalize_date(value):
+    """Coerce workbook cell values into `date` objects when possible."""
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
@@ -113,6 +118,7 @@ def _normalize_date(value):
 
 
 def _normalize_bank(value):
+    """Normalize a bank label for downstream grouping and comparisons."""
     if value is None:
         return None
     bank = str(value).strip()
@@ -120,6 +126,7 @@ def _normalize_bank(value):
 
 
 def _numeric_value(value):
+    """Return a float for numeric inputs, excluding booleans and blanks."""
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -128,6 +135,7 @@ def _numeric_value(value):
 
 
 def _collect_pricing_rows(ws_data):
+    """Collect rows that have both a usable date and a bank name."""
     rows = []
     for r in range(2, ws_data.max_row + 1):
         date_val = _normalize_date(ws_data.cell(row=r, column=1).value)
@@ -139,6 +147,7 @@ def _collect_pricing_rows(ws_data):
 
 
 def _row_dedup_key(row):
+    """Build the case-insensitive `(date, bank)` key used for deduping."""
     return row["date"], row["bank"].casefold()
 
 
@@ -156,6 +165,7 @@ def _dedupe_rows_by_date_bank(rows):
 
 
 def _snapshot_cell_payload(cell):
+    """Capture value and formatting so rows can be reordered losslessly."""
     return {
         "value": cell.value,
         "style": copy(cell._style),
@@ -165,6 +175,7 @@ def _snapshot_cell_payload(cell):
 
 
 def _restore_cell_payload(cell, payload):
+    """Restore a cell payload captured by `_snapshot_cell_payload`."""
     cell.value = payload["value"]
     cell._style = copy(payload["style"])
     cell.comment = copy(payload["comment"])
@@ -172,6 +183,7 @@ def _restore_cell_payload(cell, payload):
 
 
 def _collect_pricing_row_payloads(ws_data):
+    """Read complete row payloads, including style metadata, for rewrites."""
     max_col = ws_data.max_column
     rows = []
     for r in range(2, ws_data.max_row + 1):
@@ -192,6 +204,7 @@ def _collect_pricing_row_payloads(ws_data):
 
 
 def _dedupe_pricing_row_payloads(rows):
+    """Remove duplicate payload rows while keeping the newest copy."""
     seen = set()
     deduped_reverse = []
     removed = 0
@@ -211,6 +224,7 @@ def _dedupe_pricing_row_payloads(rows):
 
 
 def _sort_pricing_row_payloads(rows):
+    """Sort valid rows by bank/date and keep incomplete rows at the bottom."""
     valid_rows = [row for row in rows if row["dedup_key"] is not None]
     invalid_rows = [row for row in rows if row["dedup_key"] is None]
     sorted_valid = sorted(valid_rows, key=lambda row: (row["bank"].casefold(), row["date"], row["row"]))
@@ -218,6 +232,7 @@ def _sort_pricing_row_payloads(rows):
 
 
 def _rewrite_pricing_rows(ws_data, rows):
+    """Rewrite Pricing rows from a normalized in-memory payload list."""
     existing_rows = ws_data.max_row - 1
     if existing_rows > 0:
         ws_data.delete_rows(2, existing_rows)
@@ -253,6 +268,7 @@ def deduplicate_pricing_rows(master_file_path: str) -> int:
 
 
 def _latest_per_bank(rows):
+    """Return the most recent row available for each bank."""
     latest = {}
     for row in rows:
         key = row["bank"].casefold()
@@ -263,6 +279,7 @@ def _latest_per_bank(rows):
 
 
 def _coerce_year(value):
+    """Coerce optional year input into an integer."""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -296,6 +313,7 @@ def _resolve_year_range(rows, avg_start_year=None, avg_end_year=None):
 
 
 def _build_standard_curve_chart(ws, ws_data, rows, cfg, tenors, center):
+    """Render one of the four latest-observation yield/spread curve charts."""
     sr = cfg["table_start_row"]
     sc = cfg["table_start_col"]
 
@@ -418,6 +436,24 @@ def _aggregate_weekly_average_spreads(ws_data, rows, spread_cols):
     return weekly_points
 
 
+def _configure_time_series_date_axis(chart):
+    """Attach a date axis that preserves day, month, and year labels.
+
+    Excel will otherwise auto-format weekly categories down to month-only
+    labels on these charts. Using an explicit `DateAxis` with a fixed number
+    format keeps the full week-start date visible whenever a label is shown.
+    """
+    date_axis = DateAxis(crossAx=chart.y_axis.axId)
+    date_axis.title = "Week Start (Monday)"
+    date_axis.title.overlay = False
+    date_axis.tickLblPos = "low"
+    date_axis.delete = False
+    date_axis.number_format = TIME_SERIES_AXIS_DATE_FORMAT
+    date_axis.baseTimeUnit = "days"
+    chart.x_axis = date_axis
+    chart.y_axis.crossAx = date_axis.axId
+
+
 def _build_average_spread_time_series_chart(ws, weekly_points, cfg, year_start, year_end, center):
     """Render one weekly average spread time-series chart and backing table."""
     sr = cfg["table_start_row"]
@@ -450,10 +486,7 @@ def _build_average_spread_time_series_chart(ws, weekly_points, cfg, year_start, 
     chart.height = 14.0
     chart.style = 2
 
-    chart.x_axis.title = "Week Start (Monday)"
-    chart.x_axis.title.overlay = False
-    chart.x_axis.tickLblPos = "low"
-    chart.x_axis.delete = False
+    _configure_time_series_date_axis(chart)
 
     chart.y_axis.title = "Spread (bps)"
     chart.y_axis.title.overlay = False

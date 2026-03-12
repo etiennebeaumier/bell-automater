@@ -3,6 +3,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.chart.axis import DateAxis
 from openpyxl.styles import PatternFill
 
 import excel_writer
@@ -56,6 +57,12 @@ def _read_weekly_table(ws, table_start_row, table_start_col):
 
 def _chart_title_text(chart):
     return chart.title.tx.rich.p[0].r[0].t
+
+
+def _axis_format_code(axis):
+    if axis.numFmt is None:
+        return None
+    return axis.numFmt.formatCode
 
 
 class UpdateChartsWeeklyAverageTests(unittest.TestCase):
@@ -180,6 +187,16 @@ class UpdateChartsWeeklyAverageTests(unittest.TestCase):
             self.assertEqual(len(ws._charts), 6)
             self.assertEqual(len(ws._charts[4].series), 4)
             self.assertEqual(len(ws._charts[5].series), 4)
+            self.assertIsInstance(ws._charts[4].x_axis, DateAxis)
+            self.assertIsInstance(ws._charts[5].x_axis, DateAxis)
+            self.assertEqual(
+                _axis_format_code(ws._charts[4].x_axis),
+                excel_writer.TIME_SERIES_AXIS_DATE_FORMAT,
+            )
+            self.assertEqual(
+                _axis_format_code(ws._charts[5].x_axis),
+                excel_writer.TIME_SERIES_AXIS_DATE_FORMAT,
+            )
 
             expected_core_titles = [
                 "Bell Canada - CAD New Issue Spread Curve (bps)",
