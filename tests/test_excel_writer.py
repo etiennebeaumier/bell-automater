@@ -197,6 +197,10 @@ class UpdateChartsWeeklyAverageTests(unittest.TestCase):
                 _axis_format_code(ws._charts[5].x_axis),
                 excel_writer.TIME_SERIES_AXIS_DATE_FORMAT,
             )
+            self.assertEqual(ws._charts[4].x_axis.majorTimeUnit, "days")
+            self.assertEqual(ws._charts[5].x_axis.majorTimeUnit, "days")
+            self.assertEqual(ws._charts[4].x_axis.majorUnit, 7.0)
+            self.assertEqual(ws._charts[5].x_axis.majorUnit, 7.0)
 
             expected_core_titles = [
                 "Bell Canada - CAD New Issue Spread Curve (bps)",

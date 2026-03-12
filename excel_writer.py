@@ -441,7 +441,7 @@ def _configure_time_series_date_axis(chart):
 
     Excel will otherwise auto-format weekly categories down to month-only
     labels on these charts. Using an explicit `DateAxis` with a fixed number
-    format keeps the full week-start date visible whenever a label is shown.
+    format and a 7-day major unit keeps the chart aligned to calendar weeks.
     """
     date_axis = DateAxis(crossAx=chart.y_axis.axId)
     date_axis.title = "Week Start (Monday)"
@@ -450,6 +450,8 @@ def _configure_time_series_date_axis(chart):
     date_axis.delete = False
     date_axis.number_format = TIME_SERIES_AXIS_DATE_FORMAT
     date_axis.baseTimeUnit = "days"
+    date_axis.majorTimeUnit = "days"
+    date_axis.majorUnit = 7
     chart.x_axis = date_axis
     chart.y_axis.crossAx = date_axis.axId
 
