@@ -19,6 +19,7 @@ from parsers.scotiabank import parse_scotiabank_pdf
 from parsers.cibc import parse_cibc_pdf
 from parsers.nbcm import parse_nbcm_pdf
 from parsers.bmo import parse_bmo_pdf
+from parsers.desjardins import parse_desjardins_pdf
 
 MASTER_FILE = os.path.join("data", "Master File.xlsx")
 REQUIRED_SHEETS = ("Pricing", "Summary Charts")
@@ -29,6 +30,7 @@ BANK_PARSERS = {
     "cibc": parse_cibc_pdf,
     "nbcm": parse_nbcm_pdf,
     "bmo": parse_bmo_pdf,
+    "desjardins": parse_desjardins_pdf,
 }
 
 
@@ -151,6 +153,8 @@ def detect_bank(pdf_path: str) -> str:
         return "nbcm"
     if "bmo" in filename:
         return "bmo"
+    if "desj" in filename or "desjardins" in filename:
+        return "desjardins"
     if "td" in filename:
         return "td"
 
@@ -170,6 +174,8 @@ def detect_bank(pdf_path: str) -> str:
         return "nbcm"
     if "bmo nesbitt burns" in text or "bmo capital markets" in text:
         return "bmo"
+    if "desjardins" in text:
+        return "desjardins"
     if "td securities" in text:
         return "td"
 

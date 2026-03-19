@@ -312,6 +312,17 @@ def _resolve_year_range(rows, avg_start_year=None, avg_end_year=None):
     return start, end
 
 
+def _filter_rows_with_data(ws_data, rows, cols):
+    """Return only rows that have at least one non-None value in the given columns."""
+    return [
+        row for row in rows
+        if any(
+            _numeric_value(ws_data.cell(row=row["row"], column=col).value) is not None
+            for col in cols
+        )
+    ]
+
+
 def _build_standard_curve_chart(ws, ws_data, rows, cfg, tenors, center):
     """Render one of the four latest-observation yield/spread curve charts."""
     sr = cfg["table_start_row"]
@@ -629,7 +640,8 @@ def update_charts(master_file_path: str, avg_start_year=None, avg_end_year=None)
     center = Alignment(horizontal="center", vertical="center")
 
     for cfg in chart_configs:
-        _build_standard_curve_chart(ws, ws_data, rows, cfg, tenors, center)
+        chart_rows = _filter_rows_with_data(ws_data, rows, cfg["cols"])
+        _build_standard_curve_chart(ws, ws_data, chart_rows, cfg, tenors, center)
 
     year_start, year_end = _resolve_year_range(
         deduped_rows,
