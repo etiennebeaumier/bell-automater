@@ -20,6 +20,7 @@ from parsers.cibc import parse_cibc_pdf
 from parsers.nbcm import parse_nbcm_pdf
 from parsers.bmo import parse_bmo_pdf
 from parsers.desjardins import parse_desjardins_pdf
+from parsers.mizuho import parse_mizuho_pdf
 
 MASTER_FILE = os.path.join("data", "Master File.xlsx")
 REQUIRED_SHEETS = ("Pricing", "Summary Charts")
@@ -31,6 +32,7 @@ BANK_PARSERS = {
     "nbcm": parse_nbcm_pdf,
     "bmo": parse_bmo_pdf,
     "desjardins": parse_desjardins_pdf,
+    "mizuho": parse_mizuho_pdf,
 }
 
 
@@ -155,6 +157,8 @@ def detect_bank(pdf_path: str) -> str:
         return "bmo"
     if "desj" in filename or "desjardins" in filename:
         return "desjardins"
+    if "mizuho" in filename:
+        return "mizuho"
     if "td" in filename:
         return "td"
 
@@ -164,7 +168,7 @@ def detect_bank(pdf_path: str) -> str:
     with pdfplumber.open(pdf_path) as pdf:
         if not pdf.pages:
             raise ValueError(f"PDF appears empty: {pdf_path}")
-        text = (pdf.pages[0].extract_text() or "").lower()
+        text = " ".join((p.extract_text() or "") for p in pdf.pages[:4]).lower()
 
     if "scotiabank" in text or "bns-internal" in text:
         return "scotiabank"
@@ -178,6 +182,8 @@ def detect_bank(pdf_path: str) -> str:
         return "desjardins"
     if "td securities" in text:
         return "td"
+    if "mizuho" in text:
+        return "mizuho"
 
     raise ValueError(f"Could not detect bank for: {pdf_path}")
 
