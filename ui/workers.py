@@ -44,8 +44,6 @@ class PdfProcessWorker(threading.Thread):
         pdf_paths,
         master_file,
         dry_run,
-        avg_start_year=None,
-        avg_end_year=None,
         on_progress=None,
         on_result=None,
         on_complete=None,
@@ -56,8 +54,6 @@ class PdfProcessWorker(threading.Thread):
         self.pdf_paths = pdf_paths
         self.master_file = master_file
         self.dry_run = dry_run
-        self.avg_start_year = avg_start_year
-        self.avg_end_year = avg_end_year
         self.on_progress = on_progress
         self.on_result = on_result
         self.on_complete = on_complete
@@ -65,7 +61,7 @@ class PdfProcessWorker(threading.Thread):
 
     def run(self):
         from main import detect_bank, BANK_PARSERS
-        from excel_writer import append_row, deduplicate_pricing_rows, update_charts
+        from excel_writer import append_row, deduplicate_pricing_rows
 
         total = len(self.pdf_paths)
         success = 0
@@ -96,26 +92,15 @@ class PdfProcessWorker(threading.Thread):
             if self.on_progress:
                 self.app.after(0, self.on_progress, (idx + 1) / total)
 
-        # Keep workbook post-processing batched to one dedupe + chart rebuild.
         if not self.dry_run and success > 0:
             try:
                 removed = deduplicate_pricing_rows(self.master_file)
-                update_charts(
-                    self.master_file,
-                    avg_start_year=self.avg_start_year,
-                    avg_end_year=self.avg_end_year,
-                )
                 if self.on_result:
-                    post_msg = (
-                        "Post-processing complete: "
-                        f"removed {removed} duplicate row(s); rebuilt charts."
-                    )
-                    self.app.after(0, self.on_result, post_msg, True)
+                    self.app.after(0, self.on_result, f"Post-processing: removed {removed} duplicate row(s).", True)
             except Exception as exc:
                 failed += 1
                 if self.on_result:
-                    post_msg = f"Post-processing failed: {exc}"
-                    self.app.after(0, self.on_result, post_msg, False)
+                    self.app.after(0, self.on_result, f"Post-processing failed: {exc}", False)
 
         summary = f"Done: {success} succeeded, {failed} failed"
         if self.on_complete:

@@ -23,7 +23,7 @@ from parsers.desjardins import parse_desjardins_pdf
 from parsers.mizuho import parse_mizuho_pdf
 
 MASTER_FILE = os.path.join("data", "Master File.xlsx")
-REQUIRED_SHEETS = ("Pricing", "Summary Charts")
+REQUIRED_SHEETS = ("Pricing",)
 
 BANK_PARSERS = {
     "td": parse_td_pdf,
@@ -263,18 +263,8 @@ def process_many_pdfs(
     pdf_paths: list[str],
     master_file: str,
     dry_run: bool = False,
-    avg_start_year: int | None = None,
-    avg_end_year: int | None = None,
 ) -> bool:
-    """Process PDFs and run one post-processing step at the end.
-
-    Non-dry-run behavior:
-    1) Parse and append rows for each successful PDF.
-    2) Once all files are attempted, deduplicate Pricing rows by
-       (date, bank case-insensitive), keeping newest rows.
-    3) Rebuild Summary Charts once from the final workbook state,
-       optionally bounded by `avg_start_year` / `avg_end_year`.
-    """
+    """Process PDFs and deduplicate the Pricing sheet at the end."""
     success = 0
     failed = 0
 
@@ -287,22 +277,11 @@ def process_many_pdfs(
             print(f"Error processing {pdf_path}: {exc}")
 
     if not dry_run and success > 0:
-        from excel_writer import deduplicate_pricing_rows, update_charts
+        from excel_writer import deduplicate_pricing_rows
 
         try:
             removed = deduplicate_pricing_rows(master_file)
-            if avg_start_year is None and avg_end_year is None:
-                update_charts(master_file)
-            else:
-                update_charts(
-                    master_file,
-                    avg_start_year=avg_start_year,
-                    avg_end_year=avg_end_year,
-                )
-            print(
-                "Post-processing: "
-                f"removed {removed} duplicate row(s) and rebuilt Summary Charts."
-            )
+            print(f"Post-processing: removed {removed} duplicate row(s).")
         except Exception as exc:
             failed += 1
             print(f"Post-processing failed: {exc}")

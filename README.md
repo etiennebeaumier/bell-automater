@@ -1,17 +1,17 @@
 # Bell Automater
 
-Bell Automater parses BCECN new-issue pricing PDFs, writes the extracted values into a master Excel workbook, and rebuilds the summary charts used in Bell pricing workflows.
+Bell Automater parses BCECN new-issue pricing PDFs and writes the extracted values into a master Excel workbook.
 
 It runs as a standalone desktop application (no Python installation required) or from the command line.
 
 ## What the Tool Does
 
 - Detects the sending bank from the PDF filename or first-page content
-- Parses BCECN PDFs from TD, Scotiabank, CIBC, NBCM, and BMO
+- Parses BCECN PDFs from TD, Scotiabank, CIBC, NBCM, BMO, Desjardins, and Mizuho
 - Extracts CAD and USD spreads and yields for 3Y, 5Y, 7Y, 10Y, and 30Y tenors
 - Extracts CAD and USD NC5 and NC10 spread/coupon fields when present
 - Appends one row per PDF into the `Pricing` sheet during processing
-- Runs end-of-run post-processing (non-dry-run only): removes duplicate `Pricing` rows by `(date, bank)` case-insensitively (keep newest), reorders rows by bank/date, then rebuilds six charts once in `Summary Charts`
+- Runs end-of-run post-processing (non-dry-run only): removes duplicate `Pricing` rows by `(date, bank)` case-insensitively (keep newest), reorders rows by bank/date
 - Supports dry-run mode to preview parsed data without writing
 
 ## Desktop Application
@@ -24,23 +24,19 @@ The primary way to use the tool is the standalone desktop app, built with Custom
 - **Dry-run mode**: preview parsed spreads, yields, and hybrid data in the results panel without writing to the workbook
 - **Dark / Light / System theme** toggle
 - **Persistent settings**: workbook path, default PDF source folder, and preferences saved to `~/.bcecn_pricing/config.json`
-- **Quick startup mode**: when workbook + preferred PDF folder are valid and parseable PDFs are present, startup shows a small year-range prompt (`OK` or `Open GUI`) and can process/close without loading the full interface
-- **Average chart year controls**: `Start Year` / `End Year` dropdowns bound the weekly average spread charts
+- **Quick startup mode**: when workbook + preferred PDF folder are valid and parseable PDFs are present, processes them immediately and exits without opening the full interface
 
 ### Quick Startup Flow
 
 At app launch (`python3 app.py` or packaged app):
 
-1. Validate saved workbook path (`Pricing` and `Summary Charts` sheets required).
+1. Validate saved workbook path (`Pricing` sheet required).
 2. Validate saved preferred PDF source folder.
 3. Check for at least one parseable PDF in that folder.
 
-If all checks pass, a small popup appears:
-- Choose `Start Year` / `End Year` for average spread charts.
-- Click `OK` to process PDFs immediately (append rows, dedupe/order, rebuild charts) and exit.
-- Click `Open GUI` to continue in the full interface.
+If all checks pass, PDFs are processed immediately and the app exits.
 
-If any check fails, the app opens the full GUI by default.
+If any check fails, the app opens the full GUI.
 
 ### Running the App
 
@@ -83,7 +79,7 @@ ui/                                    CustomTkinter GUI package
   workers.py                           Background threading workers
 config.py                             JSON config manager
 main.py                               CLI entry point, orchestration
-excel_writer.py                        Workbook append, dedupe, and chart generation
+excel_writer.py                        Workbook append and dedupe
 parsers/                               Bank-specific PDF parsers
 build_mac.sh                           macOS build script
 build_win.bat                          Windows build script
@@ -107,10 +103,7 @@ No requirements. Run the executable directly.
 
 ### Workbook
 
-A master workbook containing these sheets:
-
-- `Pricing`
-- `Summary Charts`
+A master workbook containing a `Pricing` sheet.
 
 ## Setup (from source)
 
@@ -138,7 +131,7 @@ Run automated tests:
 python3 -m unittest discover -s tests -v
 ```
 
-Current test coverage includes weekly average-chart aggregation logic, year-range filtering behavior, chart-output regressions, workbook deduplication behavior, and CLI post-processing orchestration.
+Current test coverage includes workbook deduplication behavior and CLI post-processing orchestration.
 
 ## CLI Usage
 
@@ -190,35 +183,14 @@ python3 main.py
 - Column A: date
 - Column B: bank name
 - Columns C through AD: parsed CAD and USD spreads, yields, and NC values
-- For non-dry-run runs, duplicate `Pricing` rows are removed once at end-of-run, valid rows are sorted by bank/date, then six charts are rebuilt once
+- For non-dry-run runs, duplicate `Pricing` rows are removed once at end-of-run and valid rows are sorted by bank/date
 
 ### Duplicate Handling
 
 - Duplicate key: `(Date, Bank)` with bank matched case-insensitively
 - Keep policy: newest row in workbook order is preserved per duplicate key
 - Post-dedupe ordering: valid rows are sorted by bank (case-insensitive) then date (earliest to latest)
-- Scope: Python desktop and CLI workflows
-- Rows with missing date or bank are not part of deduplication and are appended after valid rows in their original relative order
-
-### Summary Charts Outputs
-
-1. Bell Canada - CAD New Issue Spread Curve (bps)
-2. Bell Canada - CAD Re-Offer Yield Curve
-3. Bell Canada - USD New Issue Spread Curve (bps)
-4. Bell Canada - USD Re-Offer Yield Curve
-5. Bell Canada - CAD Average Spread Through Time (`3Y`, `5Y`, `10Y`, `30Y`)
-6. Bell Canada - USD Average Spread Through Time (`3Y`, `5Y`, `10Y`, `30Y`)
-
-Core chart behavior:
-- Uses only the most recent row per bank.
-- X-axis is tenor (`3Y`, `5Y`, `7Y`, `10Y`, `30Y`).
-
-Weekly average chart behavior:
-- Uses deduplicated rows by `(date, bank)` with bank matched case-insensitively, keeping the newest row.
-- Applies an inclusive year filter from UI settings (`Start Year` / `End Year`), swapping bounds if selected in reverse.
-- Buckets rows by ISO week and labels categories with the Monday week-start date.
-- For each tenor and week, computes per-bank means first, then an equal-weight average across banks.
-- Drops weeks where all five tenor values are missing.
+- Rows with missing date or bank are not part of deduplication and are kept at the bottom in their original relative order
 
 ## Supported Banks
 
@@ -227,6 +199,8 @@ Weekly average chart behavior:
 - CIBC
 - NBCM
 - BMO
+- Desjardins
+- Mizuho
 
 Bank detection works by filename hints first, then first-page PDF text. If detection fails, include the bank name in the filename.
 
@@ -235,7 +209,7 @@ Bank detection works by filename hints first, then first-page PDF text. If detec
 ### Workbook validation fails
 
 - Confirm the workbook path is correct in the settings panel
-- Confirm the workbook contains `Pricing` and `Summary Charts`
+- Confirm the workbook contains a `Pricing` sheet
 - Use dry-run mode to test parsing without writing
 
 ### Bank detection fails

@@ -157,8 +157,6 @@ class PdfTab(ctk.CTkFrame):
             pdf_paths=self.selected_files,
             master_file=settings.master_file,
             dry_run=settings.dry_run,
-            avg_start_year=settings.avg_start_year,
-            avg_end_year=settings.avg_end_year,
             on_progress=self._on_progress,
             on_result=self._on_result,
             on_complete=self._on_complete,
