@@ -68,7 +68,12 @@ def append_row(master_file_path: str, data: dict):
             if col in pct_columns:
                 cell.number_format = "0.000%"
 
-    wb.save(master_file_path)
+    try:
+        wb.save(master_file_path)
+    except PermissionError:
+        raise PermissionError(
+            f"Cannot write to workbook — close it in Excel first: {master_file_path}"
+        )
     print(f"Wrote {data['bank']} data for {data['date'].strftime('%Y-%m-%d')} to row {next_row}")
     return wb
 
@@ -231,7 +236,12 @@ def deduplicate_pricing_rows(master_file_path: str) -> int:
 
     if removed or order_changed:
         _rewrite_pricing_rows(ws_data, sorted_rows)
-        wb.save(master_file_path)
+        try:
+            wb.save(master_file_path)
+        except PermissionError:
+            raise PermissionError(
+                f"Cannot write to workbook — close it in Excel first: {master_file_path}"
+            )
 
     return removed
 
