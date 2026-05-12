@@ -44,7 +44,7 @@ PDF file
   → deduplicate_pricing_rows() (end-of-batch: dedupes by (date, bank), keeps newest, sorts)
 ```
 
-**`parsers/`** — One module per bank (td, scotiabank, cibc, nbcm, bmo, desjardins, mizuho). Each exports a single `parse_<bank>_pdf(path) -> dict` function. The dict must contain `date` (datetime), `bank` (str), and metric keys matching `COLUMN_MAP` in `excel_writer.py`.
+**`parsers/`** — One module per bank (td, scotiabank, cibc, nbcm, bmo, desjardins, mizuho, bofa). Each exports a single `parse_<bank>_pdf(path) -> dict` function. The dict must contain `date` (datetime), `bank` (str), and metric keys matching `COLUMN_MAP` in `excel_writer.py`.
 
 **`excel_writer.py`** — All workbook I/O lives here:
 - `append_row()` — writes one row to the `Pricing` sheet

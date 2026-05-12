@@ -7,7 +7,7 @@ It runs as a standalone desktop application (no Python installation required) or
 ## What the Tool Does
 
 - Detects the sending bank from the PDF filename or first-page content
-- Parses BCECN PDFs from TD, Scotiabank, CIBC, NBCM, BMO, Desjardins, and Mizuho
+- Parses BCECN PDFs from TD, Scotiabank, CIBC, NBCM, BMO, Desjardins, Mizuho, and BofA
 - Extracts CAD and USD spreads and yields for 3Y, 5Y, 7Y, 10Y, and 30Y tenors
 - Extracts CAD and USD NC5 and NC10 spread/coupon fields when present
 - Appends one row per PDF into the `Pricing` sheet during processing
@@ -201,6 +201,7 @@ python3 main.py
 - BMO
 - Desjardins
 - Mizuho
+- BofA
 
 Bank detection works by filename hints first, then first-page PDF text. If detection fails, include the bank name in the filename.
 
