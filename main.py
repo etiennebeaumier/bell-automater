@@ -21,6 +21,7 @@ from parsers.nbcm import parse_nbcm_pdf
 from parsers.bmo import parse_bmo_pdf
 from parsers.desjardins import parse_desjardins_pdf
 from parsers.mizuho import parse_mizuho_pdf
+from parsers.rbc import parse_rbc_pdf
 
 MASTER_FILE = os.path.join("data", "Master File.xlsx")
 REQUIRED_SHEETS = ("Pricing",)
@@ -33,6 +34,7 @@ BANK_PARSERS = {
     "bmo": parse_bmo_pdf,
     "desjardins": parse_desjardins_pdf,
     "mizuho": parse_mizuho_pdf,
+    "rbc": parse_rbc_pdf,
 }
 
 
@@ -159,6 +161,8 @@ def detect_bank(pdf_path: str) -> str:
         return "desjardins"
     if "mizuho" in filename:
         return "mizuho"
+    if "rbc" in filename:
+        return "rbc"
     if "td" in filename:
         return "td"
 
@@ -184,6 +188,8 @@ def detect_bank(pdf_path: str) -> str:
         return "td"
     if "mizuho" in text:
         return "mizuho"
+    if "rbc capital markets" in text:
+        return "rbc"
 
     raise ValueError(f"Could not detect bank for: {pdf_path}")
 
