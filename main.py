@@ -22,6 +22,7 @@ from parsers.bmo import parse_bmo_pdf
 from parsers.desjardins import parse_desjardins_pdf
 from parsers.mizuho import parse_mizuho_pdf
 from parsers.rbc import parse_rbc_pdf
+from parsers.bofa import parse_bofa_pdf
 
 MASTER_FILE = os.path.join("data", "Master File.xlsx")
 REQUIRED_SHEETS = ("Pricing",)
@@ -35,6 +36,7 @@ BANK_PARSERS = {
     "desjardins": parse_desjardins_pdf,
     "mizuho": parse_mizuho_pdf,
     "rbc": parse_rbc_pdf,
+    "bofa": parse_bofa_pdf,
 }
 
 
@@ -165,6 +167,8 @@ def detect_bank(pdf_path: str) -> str:
         return "rbc"
     if "td" in filename:
         return "td"
+    if "bell pricing update" in filename or "bofa" in filename or "bofA" in filename:
+        return "bofa"
 
     # Content-based detection as fallback
     import pdfplumber
@@ -190,6 +194,8 @@ def detect_bank(pdf_path: str) -> str:
         return "mizuho"
     if "rbc capital markets" in text:
         return "rbc"
+    if "bank of america" in text or "bofA" in text.replace(" ", ""):
+        return "bofa"
 
     raise ValueError(f"Could not detect bank for: {pdf_path}")
 
